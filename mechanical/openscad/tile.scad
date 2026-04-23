@@ -76,30 +76,44 @@ FRAME_H          = TILE_HEIGHT - DIFFUSER_THICK;   // 13.5
 WALL_THICK       = 2;
 BACK_THICK       = 2;     // integrated rear wall (was the "back cap")
 
-// ----- interior PCB bay -----
-PCB_THICK        = 1.6;
-PCB_BACK_SPACE   = 4;     // between inner back face and PCB bottom face
-                          // (budget for SMD components on the PCB back)
-PCB_BOTTOM_Z     = BACK_THICK + PCB_BACK_SPACE;        // 6.0
-PCB_TOP_Z        = PCB_BOTTOM_Z + PCB_THICK;           // 7.6
-PCB_CENTER_Z     = (PCB_BOTTOM_Z + PCB_TOP_Z) / 2;     // 6.8
+// ----- interior Z anchors -----
+// No central PCB in this design — the controller is a pre-made dev board
+// (XIAO ESP32-C3, CH32V003 breakout, or similar) dropped into a pocket
+// in one corner, and the LEDs are individual pre-made SK6812 modules
+// seated in cradles on a 3 × 3 grid. The Z anchors below are kept for
+// the connector and magnet geometry; they describe the plane where the
+// LED module top face ends up (= where a flat PCB top would have been).
+LED_MOD_PCB_TH   = 1.6;   // LED module PCB thickness (typical)
+LED_MOD_STACKUP  = 4.0;   // height from back inner face to bottom of LED module
+LED_MOD_BOT_Z    = BACK_THICK + LED_MOD_STACKUP;       // 6.0 — cradle top
+LED_MOD_TOP_Z    = LED_MOD_BOT_Z + LED_MOD_PCB_TH;     // 7.6
+LED_HEIGHT       = 1.5;                                // SK6812 body above module PCB
+LED_TOP_Z        = LED_MOD_TOP_Z + LED_HEIGHT;         // 9.1
+DIFFUSER_GAP     = FRAME_H - LED_TOP_Z;                // 4.4
 
-// LED height above PCB top (SK6812 5050 ~1.4 mm body)
-LED_HEIGHT       = 1.5;
-LED_TOP_Z        = PCB_TOP_Z + LED_HEIGHT;             // 9.1
-DIFFUSER_GAP     = FRAME_H - LED_TOP_Z;                // 4.4 — plenty
+// ----- LED module cradles -----
+// Each cradle is a raised pad at the LED module's X/Y position, with a
+// small retention lip around the module footprint. Module drops in and
+// is held by friction + lip; no glue, no screws. Wires exit via a slot
+// on one side of each cradle.
+LED_MOD_XY       = 15;     // module footprint (typical pre-made SK6812 single-LED breakouts)
+CRADLE_XY        = LED_MOD_XY + 2.4;   // outer — module + 1.2 mm lip per side
+CRADLE_LIP_T     = 1.0;    // lip height above module top surface
+CRADLE_Z_LO      = BACK_THICK;         // cradle base = back inner face
+CRADLE_Z_HI      = LED_MOD_BOT_Z;      // cradle top — module rests here
+CRADLE_WIRE_SLOT_W = 3.0;              // slot on -Y side of each cradle for wires
 
-// ----- corner bosses (PCB screws and optional back magnets) -----
-// Bosses stop at the PCB bottom face so the PCB sits flat on top of them.
-// Avoids the need for 10 × 10 mm corner cutouts in the PCB, preserving
-// the corner LED positions of the 5 × 5 grid.
-CORNER_BOSS_XY   = 10;                                 // reduced from 14
-CORNER_BOSS_Z_LO = BACK_THICK;                         // 2
-CORNER_BOSS_Z_HI = PCB_BOTTOM_Z;                       // 6 (was 9.6)
-
-// ----- PCB retention -----
-PCB_SCREW_OD     = 2.2;      // M2 self-tapping clearance
-PCB_HOLE_INSET   = 4;        // screw hole from tile corner
+// ----- MCU board pocket -----
+// Flat area in the -X,-Y corner where a pre-made MCU board (e.g. a
+// XIAO ESP32-C3 at 21 × 17.5 mm, or a CH32V003 breakout ~ 20 × 15 mm)
+// drops in. No screws by default — retained by a pair of clip ribs on
+// the long sides. Wires run from the board to the LED chain and to
+// each edge connector.
+MCU_POCKET_X     = 26;     // floor width (room for boards up to 24 mm)
+MCU_POCKET_Y     = 20;     // floor depth
+MCU_POCKET_ORIG  = [3, 3]; // inset from the tile -X,-Y corner
+MCU_RIB_T        = 1.2;    // retention rib thickness (one per long side)
+MCU_RIB_H        = 3.0;    // rib height above back inner face
 
 // ----- edge connector -----
 CONN_TYPE        = "pogo";   // "pogo" | "header"
@@ -134,8 +148,9 @@ HEADER_BODY_W    = CONN_PINS * CONN_PITCH + 0.8;
 HEADER_BODY_H    = 2.5;
 HEADER_SLOT_H    = HEADER_BODY_H + 1.0;
 
-// connector z-center: coincides with PCB centre height
-CONN_Z_CENTER    = PCB_CENTER_Z;                       // 6.8
+// connector z-center: where edge breakout boards will sit (formerly
+// coincided with the PCB mid-plane; same Z in this design)
+CONN_Z_CENTER    = (LED_MOD_BOT_Z + LED_MOD_TOP_Z) / 2;   // 6.8
 
 // ----- magnets (neodymium 5 × 2 mm discs) -----
 MAG_OD           = 5;
@@ -191,9 +206,9 @@ GUIDE_WALL_T     = 1.2;      // grid wall thickness
 GUIDE_WALL_H     = 5.0;      // wall height (PCB top → near diffuser)
 GUIDE_CLEAR      = 0.4;      // total per-side clearance vs interior
 
-// ----- central support pillar (reduces PCB flex on large single board) -----
-CENTRE_PILLAR_XY = 10;       // mm square, centred at tile midpoint
-CENTRE_PILLAR    = true;     // set false to omit
+// ----- feature flags -----
+LED_CRADLES      = true;     // print cradles for 9 LED modules
+MCU_POCKET       = true;     // print retention ribs for a dev board
 
 /* ============================ rendering ============================ */
 
@@ -227,9 +242,14 @@ module assembly_exploded() {
         translate([0, 0, TILE_HEIGHT + 12])
             diffuser();
 
-    // ghost PCB for context
-    %translate([(TILE_SIZE - 94) / 2, (TILE_SIZE - 94) / 2, PCB_BOTTOM_Z])
-        cube([94, 94, PCB_THICK]);
+    // ghost LED modules in their cradles
+    ghost_led_modules();
+
+    // ghost MCU board in its pocket
+    %translate([MCU_POCKET_ORIG[0] + 1,
+                MCU_POCKET_ORIG[1] + (MCU_POCKET_Y - 17.5) / 2,
+                BACK_THICK + MCU_RIB_H - 1.6])
+        cube([21, 17.5, 1.6]);   // XIAO ESP32-C3 footprint
 
     echo("=== palindromic pinout on populated edges ===");
     echo("pin 1 = GND,  2 = V+, 3 = BUS_A, 4 = BUS_B, 5 = BUS_B, 6 = BUS_A, 7 = V+, 8 = GND");
@@ -244,30 +264,74 @@ module frame() {
     difference() {
         union() {
             frame_shell();
-            frame_corner_bosses();
-            if (CENTRE_PILLAR)        frame_centre_pillar();
+            if (LED_CRADLES)          frame_led_cradles();
+            if (MCU_POCKET)           frame_mcu_retention();
             if (CONN_TYPE == "pogo")  frame_pogo_retainers();
             if (EDGE_MAGNETS)         frame_edge_magnet_bosses();
         }
         // subtractions
         frame_back_vents();
         frame_connector_cuts();
-        if (BACK_MAGNETS) frame_back_magnet_pockets();
         if (EDGE_MAGNETS) frame_edge_magnet_pockets();
-        frame_pcb_screw_holes();
+        if (LED_CRADLES)  frame_led_wire_slots();
     }
 }
 
-module frame_centre_pillar() {
-    // Solid pillar from back inner face up to PCB bottom face. Prevents
-    // the 94 x 94 PCB from flexing between its four corner screws, and
-    // acts as a thermal bridge from the centre LED down to the frame
-    // back. No screw hole — PCB just rests against the pillar top.
-    x0 = (TILE_SIZE - CENTRE_PILLAR_XY) / 2;
-    y0 = (TILE_SIZE - CENTRE_PILLAR_XY) / 2;
-    translate([x0, y0, BACK_THICK])
-        cube([CENTRE_PILLAR_XY, CENTRE_PILLAR_XY,
-              PCB_BOTTOM_Z - BACK_THICK]);
+// ---- LED module cradles (3 x 3 grid) --------------------------------
+module frame_led_cradles() {
+    // Nine raised pads at the 3 x 3 LED positions. Each pad is a solid
+    // plinth from the back inner face up to CRADLE_Z_HI. A thin lip on
+    // the top perimeter retains the 15 x 15 LED module by friction.
+    grid_origin = (TILE_SIZE - (LED_COLS - 1) * LED_PITCH) / 2;
+    for (r = [0 : LED_ROWS - 1], c = [0 : LED_COLS - 1]) {
+        cx = grid_origin + c * LED_PITCH;
+        cy = grid_origin + r * LED_PITCH;
+        translate([cx - CRADLE_XY / 2, cy - CRADLE_XY / 2, CRADLE_Z_LO]) {
+            // plinth
+            cube([CRADLE_XY, CRADLE_XY, CRADLE_Z_HI - CRADLE_Z_LO]);
+            // retention lip (hollow square above the plinth top)
+            translate([0, 0, CRADLE_Z_HI - CRADLE_Z_LO])
+                difference() {
+                    cube([CRADLE_XY, CRADLE_XY, CRADLE_LIP_T]);
+                    translate([(CRADLE_XY - LED_MOD_XY) / 2,
+                               (CRADLE_XY - LED_MOD_XY) / 2, -0.1])
+                        cube([LED_MOD_XY, LED_MOD_XY,
+                              CRADLE_LIP_T + 0.2]);
+                }
+        }
+    }
+}
+
+module frame_led_wire_slots() {
+    // Small slot on the -Y face of each cradle to let the wire pigtail
+    // exit sideways. Cut from the top of the lip down to just below the
+    // module's top face.
+    grid_origin = (TILE_SIZE - (LED_COLS - 1) * LED_PITCH) / 2;
+    slot_h = CRADLE_LIP_T + 1.0;
+    for (r = [0 : LED_ROWS - 1], c = [0 : LED_COLS - 1]) {
+        cx = grid_origin + c * LED_PITCH;
+        cy = grid_origin + r * LED_PITCH;
+        translate([cx - CRADLE_WIRE_SLOT_W / 2,
+                   cy - CRADLE_XY / 2 - 0.1,
+                   CRADLE_Z_HI - 0.5])
+            cube([CRADLE_WIRE_SLOT_W, CRADLE_XY + 0.2, slot_h]);
+    }
+}
+
+// ---- MCU board retention ribs --------------------------------------
+module frame_mcu_retention() {
+    // Two small ribs running parallel along the long axis of the
+    // pocket — the dev board slides between them and is held by
+    // friction. No screws. Pocket floor = the back inner face.
+    ox = MCU_POCKET_ORIG[0];
+    oy = MCU_POCKET_ORIG[1];
+    translate([ox, oy, BACK_THICK]) {
+        // rib on -Y side
+        cube([MCU_POCKET_X, MCU_RIB_T, MCU_RIB_H]);
+        // rib on +Y side
+        translate([0, MCU_POCKET_Y - MCU_RIB_T, 0])
+            cube([MCU_POCKET_X, MCU_RIB_T, MCU_RIB_H]);
+    }
 }
 
 // ---- shell: box with closed back + walls, open at z = FRAME_H -----
@@ -290,40 +354,6 @@ module frame_back_vents() {
                    y - BACK_VENT_W / 2,
                    -0.1])
             cube([BACK_VENT_L, BACK_VENT_W, BACK_THICK + 0.2]);
-    }
-}
-
-// ---- corner bosses for PCB screws (and optional back magnets) --------
-module frame_corner_bosses() {
-    h = CORNER_BOSS_Z_HI - CORNER_BOSS_Z_LO;
-    for (xsign = [0, 1], ysign = [0, 1]) {
-        x = xsign ? TILE_SIZE - CORNER_BOSS_XY : 0;
-        y = ysign ? TILE_SIZE - CORNER_BOSS_XY : 0;
-        translate([x, y, CORNER_BOSS_Z_LO])
-            cube([CORNER_BOSS_XY, CORNER_BOSS_XY, h]);
-    }
-}
-
-module frame_pcb_screw_holes() {
-    // M2 self-tapping clearance through the corner boss, from below the
-    // PCB up to the top of the boss.
-    for (xsign = [0, 1], ysign = [0, 1]) {
-        x = xsign ? TILE_SIZE - PCB_HOLE_INSET : PCB_HOLE_INSET;
-        y = ysign ? TILE_SIZE - PCB_HOLE_INSET : PCB_HOLE_INSET;
-        translate([x, y, CORNER_BOSS_Z_LO - 0.1])
-            cylinder(h = CORNER_BOSS_Z_HI - CORNER_BOSS_Z_LO + 0.3,
-                     d = PCB_SCREW_OD);
-    }
-}
-
-module frame_back_magnet_pockets() {
-    pocket_d = MAG_OD + 2 * MAG_CLEAR_RAD;
-    pocket_h = MAG_H + MAG_CLEAR_AX;
-    for (xsign = [0, 1], ysign = [0, 1]) {
-        x = xsign ? TILE_SIZE - BACK_MAG_INSET : BACK_MAG_INSET;
-        y = ysign ? TILE_SIZE - BACK_MAG_INSET : BACK_MAG_INSET;
-        translate([x, y, -0.1])
-            cylinder(h = pocket_h + 0.1, d = pocket_d);
     }
 }
 
@@ -495,6 +525,22 @@ module diffuser() {
         // finger-pry slot on one edge so the diffuser can be popped off
         translate([(TILE_SIZE - DIFF_PULL_W) / 2, -0.1, 0])
             cube([DIFF_PULL_W, DIFF_PULL_D + 0.1, DIFFUSER_THICK * 0.6]);
+    }
+}
+
+
+// --- ghost LED modules at the 3 x 3 grid positions ---------------------
+module ghost_led_modules() {
+    grid_origin = (TILE_SIZE - (LED_COLS - 1) * LED_PITCH) / 2;
+    for (r = [0 : LED_ROWS - 1], c = [0 : LED_COLS - 1]) {
+        cx = grid_origin + c * LED_PITCH;
+        cy = grid_origin + r * LED_PITCH;
+        // module PCB
+        %translate([cx - LED_MOD_XY / 2, cy - LED_MOD_XY / 2, LED_MOD_BOT_Z])
+            cube([LED_MOD_XY, LED_MOD_XY, LED_MOD_PCB_TH]);
+        // SK6812 body on top of module
+        %translate([cx - 2.5, cy - 2.5, LED_MOD_TOP_Z])
+            cube([5, 5, LED_HEIGHT]);
     }
 }
 

@@ -2,28 +2,40 @@
 
 How the LED array, MCU, buck, transceiver, and supporting components fit inside the 100 × 100 × 15 mm enclosure. Companion to [`../../mechanical/openscad/tile.scad`](../../mechanical/openscad/tile.scad) and [`../../docs/architecture.md`](../../docs/architecture.md). Drives the KiCad board outline before the first schematic spin.
 
-## Topology: single PCB, sandwich layout
+## Topology: no custom PCB — drop-in modules + pre-made dev board
 
-**One PCB per tile.** LEDs (9 × SK6812 RGBW) on the **top face** facing the diffuser. Controller — CH32V003 MCU, MAX485 transceiver, MP1584 buck, passives — on the **bottom face** facing the back wall. The board is suspended on four corner bosses plus a central support pillar in the frame, floating above the back wall with room for the back-side components and a vent-cooled air pocket.
+**Nothing is custom-fabricated.** Nine individual pre-made SK6812 LED modules drop into 9 cradles printed into the frame interior at the 3 × 3 grid positions. A pre-made MCU dev board (XIAO ESP32-C3, CH32V003 breakout, or equivalent) slides into a retention-rib pocket in the −X, −Y corner of the frame. Short point-to-point wires connect the dev board to each LED module (data chain + power) and to each edge-connector group. No custom PCB; no central board; no corner screw bosses.
 
 ```
    ┌──────────────────────────────┐ ← diffuser (100 × 100, edge-to-edge)
    │                              │
-   │     ·   ·   ·                │
-   │   (LED) (LED) (LED)          │ ← 9 × SK6812 on top face of PCB
-   │     ·   ·   ·                │
-   │   (LED) (LED) (LED)          │
-   │     ·   ·   ·                │
-   │   (LED) (LED) (LED)          │
    │                              │
-   ├──────────────────────────────┤ ← PCB (94 × 94)
-   │  [MCU] [buck] [MAX485] …     │ ← controller parts on bottom face
-   │      ▓ centre pillar ▓       │
-   │                              │ ← 3 mm back-side component space
+   │  (LED) (LED) (LED)           │ ← 9 × SK6812 modules in 3 × 3 cradles
+   │                              │     on 30 mm pitch, printed into frame
+   │  (LED) (LED) (LED)           │
+   │                              │
+   │  (LED) (LED) (LED)           │
+   │                              │
+   ├──────────────────────────────┤
+   │ [dev brd]                    │ ← MCU dev board in its corner pocket,
+   │                              │     retained by printed rib clips.
+   │                              │     Wires fan out to LED cradles and
+   │                              │     to the edge connector groups.
    ├──────────────────────────────┤ ← frame back inner face
    │     vvv     vvv     vvv      │ ← vent slots
    └──────────────────────────────┘ ← frame back outer face
 ```
+
+### Why no PCB
+
+- **Lower iteration cost.** No board spin, no JLCPCB wait time. Pick a different MCU next week — swap the dev board.
+- **No SMT assembly.** All parts come pre-assembled. Per-tile build is soldering wires to header pins.
+- **Simpler v1 bench.** Any CH32V003 dev board + MP1584 buck module + MAX485 breakout wired together works; or a XIAO ESP32-C3 on its own if you're willing to take the WiFi-per-tile path.
+- **Repairability.** Dead LED? Pop the diffuser, pull the module, plug in a new one. Dead MCU? Slide the dev board out of its pocket and replace.
+
+### Trade-off
+
+Per-tile assembly is **slower and more expensive** than a custom PCB would be (~£18 + ~30 min of wiring vs ~£5 + 10 min of click-and-solder). This is the right choice for exploratory v1 bench hardware, not for a production run — at volume, collapse back into a custom PCB.
 
 ## Space budget — what's actually available
 
@@ -51,115 +63,86 @@ How the LED array, MCU, buck, transceiver, and supporting components fit inside 
 
 Features that cut into the 96 × 96 mm usable interior footprint:
 
-| Feature | Footprint | Qty | Area lost | Notes |
+| Feature | Footprint | Qty | Area | Notes |
 |---|---|---:|---:|---|
-| Corner bosses | 10 × 10 mm | 4 | 400 mm² | Screw bosses, stop at z = 6 (PCB rests on top) |
-| Centre support pillar | 10 × 10 mm | 1 | 100 mm² | Anti-flex support at tile centre, z = 2 → 6 |
+| LED module cradles | 17.4 × 17.4 mm | 9 | 2725 mm² | 15 × 15 mm module bay with 1.2 mm lip, z = 2 → 6 |
+| MCU board pocket (floor + ribs) | 26 × 20 mm | 1 | 520 mm² | Corner at (3, 3) with rib clips on ±Y sides |
 | Edge magnet bosses | 9 × 3 mm | 8 | 216 mm² | 2 per edge × 4 edges |
 | Pogo pin retainers | 22 × 2 mm | 4 | 176 mm² | 1 strip per edge, centred |
-| **Total intrusion** | | | **892 mm²** | out of 9 216 mm² interior |
+| **Total feature area** | | | **~3640 mm²** | out of 9 216 mm² interior |
 
-The PCB must work around these features or notch around them. The centre pillar is a 10 × 10 area at (45, 45)–(55, 55) in tile-local coords, directly under the centre LED — the PCB just needs a **clearance notch** or a keep-out polygon (no pad placement in that area), not a through-cut.
+There's no longer a PCB footprint to negotiate — all these features are just printed plastic that the modules/board drop into. Remaining interior volume is for wire routing.
 
-## PCB outline
+## Layout — plan view
 
-Recommended outline: **94 × 94 mm with edge notches** for the magnet and pogo-pin bosses. Corner bosses stop at the PCB bottom face (z = 6) so the PCB sits flat on top of them — **no corner cutouts required** (all 25 LED positions preserved).
-
-Plan view (not to scale):
+No board outline to draw — the features are printed directly into the frame. Plan view (not to scale):
 
 ```
-            -Y edge
-            ▼
+           -Y edge
+           ▼
   ┌──────────────────────────────┐ ← 100 mm tile outer edge
-  │┌───┐    ┌─┐    ┌──┐    ┌─┐   ┌───┐│
-  ││░░░│    │ │    │░░│    │ │   │░░░││
-  │└───┘    └─┘    └──┘    └─┘   └───┘│   ← ░ = PCB-absent zones
-  │                                    │     (notch or cutout at edges;
-  │     ┌──────────────────────┐       │      corner bosses under PCB)
-  │     │                      │       │
- -X│    │   PCB 94 × 94 mm     │      +X
- ──│    │                      │ ──────│
- edge   │   (pogo strip cuts   │       edge
-  │     │    a 22 × 2 mm notch │       │
-  │     │    at each edge; each│       │
-  │     │    magnet boss cuts  │       │
-  │     │    a 10 × 3 mm notch)│       │
-  │     └──────────────────────┘       │
-  │┌───┐    ┌─┐    ┌──┐    ┌─┐   ┌───┐│
-  ││░░░│    │ │    │░░│    │ │   │░░░││
-  │└───┘    └─┘    └──┘    └─┘   └───┘│
+  │                              │
+  │ [MCU]                        │
+  │ pocket    ┌─┐  ┌─┐  ┌─┐      │   3 × 3 LED cradles (17.4 mm each)
+  │ (26×20)   └─┘  └─┘  └─┘      │   centred at tile-local
+  │           ┌─┐  ┌─┐  ┌─┐      │   (20, 20), (50, 20), (80, 20),
+  │           └─┘  └─┘  └─┘      │   (20, 50), (50, 50), (80, 50),
+  │           ┌─┐  ┌─┐  ┌─┐      │   (20, 80), (50, 80), (80, 80)
+  │           └─┘  └─┘  └─┘      │
+  │                              │
   └──────────────────────────────┘
-            ▲
-            +Y edge
 ```
 
-Notch dimensions (all cut inward from the PCB edge):
+### LED cradle dimensions
 
-- **Pogo-pin strip notch** (1 per edge, centred): 22 mm wide × 2 mm deep.
-- **Magnet-boss notch** (2 per edge, offset ±20 mm from edge midpoint): 10 mm wide × 3 mm deep.
+Each cradle is a 17.4 × 17.4 mm printed plinth with a 1.2 mm lip around the top. The 15 × 15 × 1.6 mm LED module drops into the centre recess (friction fit, no glue). A 3 mm wire-exit slot on the −Y face of each cradle lets the pigtail escape to the harness.
 
-With those notches the PCB keeps ≈ 94 × 94 mm minus ~1060 mm² of notches = **≈ 7780 mm² usable**. Plenty for a 25-LED array + supporting circuitry.
+Typical SK6812 single-LED module footprints (confirm before buying):
+
+| Source | Outer size | Notes |
+|---|---|---|
+| BTF-Lighting individual SK6812 PCB | ~15 × 15 mm | Solder pads on all 4 sides |
+| Adafruit NeoPixel single (1558) | ~8 × 10 mm | Smaller; would need adapter plate or smaller cradle |
+| Custom bare SK6812 5050 on a 15 × 15 breakout | 15 × 15 mm | ~£0.15 at JLCPCB with 500 MOQ — still no *per-tile* custom board, just a reusable sub-module |
+
+If your modules are smaller than 15 × 15, reduce `LED_MOD_XY` in `tile.scad`; the cradle auto-sizes.
+
+### MCU board pocket
+
+Floor at the frame back inner face, in the −X, −Y corner. Two parallel printed ribs (1.2 mm × 3 mm tall) retain the board by clamping its long sides. Works for any board up to 24 × 18 mm or so — covers the common dev boards:
+
+| Board | Size | Notes |
+|---|---|---|
+| Seeed XIAO ESP32-C3 | 21 × 17.5 mm | USB-C, WiFi + BT. Overkill but plug-and-play |
+| Seeed XIAO RP2040 / RP2350 | 21 × 17.5 mm | No WiFi, great for RS-485 node |
+| CH32V003F4P6 bare breakout (hand-made or LCSC) | ~20 × 15 mm | Matches the committed architecture |
+| RP2040-Zero | 23 × 18 mm | Cheap (~£3), USB-C, loads of GPIO |
 
 ## LED grid placement
 
-**Nine** SK6812 RGBW 5050 packages at 30 mm pitch, centred in the tile:
+**Nine** SK6812 RGBW modules at 30 mm pitch, centred in the tile: positions (20, 20), (50, 20), (80, 20), (20, 50), (50, 50), (80, 50), (20, 80), (50, 80), (80, 80). Each module sits in its own printed cradle; the centre cradle also acts as a thermal conduit from the centre LED down into the frame back.
 
-- LED centres: tile-local (20, 50, 80) in both X and Y.
-- In PCB-local coordinates (PCB origin at tile (3, 3)): (17, 47, 77).
-- The centre LED sits directly above the centre support pillar — good thermal path from the hottest LED in the tile down into the plastic frame and out through the back vents.
-- All 9 positions clear the corner bosses, magnet-boss notches, and pogo-pin retainer notches.
-
-Data chain: standard WS2812-style serpentine (row 0 left→right, row 1 right→left, row 2 left→right). DIN at LED (17, 17) from MCU PA1; DOUT from LED (77, 77) to a test pad.
+Data chain: WS2812-style serpentine — row 0 left→right, row 1 right→left, row 2 left→right. DIN of LED (20, 20) from MCU (e.g. ESP32-C3 GPIO0); DOUT of LED (80, 80) terminated at a header pin on the MCU board for debug.
 
 ### Why 9, not 25
 
 Each tile is **one colour cell in the system**, not a pixel-addressable display. Nine SK6812 RGBW at 60 mA = ~540 mA @ 5 V = 2.7 W peak per tile, ~45 lumens of diffused ambient output. The diffuser blends them into a single uniform glow (or 9 distinct pixels if the optional light guide is fitted). Going to 25 triples the power, cost, and thermal load for no benefit if the tile isn't trying to draw an image.
 
-## Back-side component placement
+## Controller stack per tile
 
-All control electronics go on the **bottom face of the PCB** (opposite the LEDs), in the 4 mm space between the PCB and the back wall.
+Three pre-made modules wired together, sitting in the MCU pocket + routed to the edge connectors via a harness:
 
-Recommended zoning:
+1. **MCU dev board** — carries the CH32V003 (or ESP32-C3, etc.) and exposes its GPIOs on 2.54 mm headers. Sits in the corner pocket.
+2. **Buck converter module** — MP1584EN 24 → 5 V, ~17 × 11 × 4 mm. Pre-trimmed to 5 V output. Mounts anywhere with double-sided tape; its output supplies the dev board and LED string.
+3. **RS-485 transceiver breakout** — MAX485 on a tiny carrier with header pins. ~15 × 15 mm. Wired between the MCU's USART and the BUS_A/BUS_B edge pins.
 
-```
-   Bottom face of PCB (view looking through the back):
+Total controller footprint: ~55 × 20 mm when laid end-to-end, plus some wiring space. Fits comfortably in the bottom half of the tile interior (between the LED cradles and the back wall), held by double-sided tape. The MCU pocket holds only the MCU board; buck and transceiver float in the interior.
 
-  ┌──────────────────────────────────────────────────┐
-  │ [buck module or discrete buck circuit]            │
-  │  MP1584 + L + Cs, ~17 × 11 mm or ~20 × 15 mm     │
-  │                                                  │
-  │           ┌─────────┐                            │
-  │ [MCU]     │  power  │       [MAX485 transceiver]│
-  │ CH32V003  │  tap    │       SOIC-8, ~4 × 5 mm   │
-  │ ~5 × 6 mm │  region │                            │
-  │                                                  │
-  │ [TVS][polyfuse][rev-pol MOSFET][bulk cap]        │
-  │                                                  │
-  │ [0603 passives scattered throughout]             │
-  └──────────────────────────────────────────────────┘
-```
+### Height budget
 
-Total component area: roughly 400 mm² of dense SMT. Plenty of PCB room. Thermal spreading is via copper pours.
+Interior depth from back inner face (z = 2) to lowest LED cradle surface (z = 2) is 0 — the cradles *start* at the back inner face. So the buck/transceiver modules sit in the gaps between cradles, not underneath them. Max module height = cradle top − back face = 4 mm. MP1584 modules are ~4 mm including header pin stubs (trim stubs flush if necessary). RS-485 breakouts are typically 3 mm. Both fit.
 
-## Component height constraints
-
-The 4 mm back-side space is the limiting dimension. Substitutions vs. the original BOM where needed:
-
-| Component | Standard variant | Height | Fits in 4 mm? | Action |
-|---|---|---:|:---:|---|
-| CH32V003 TSSOP-20 | | 1.2 mm | ✅ | |
-| MAX485 SOIC-8 | | 1.75 mm | ✅ | |
-| MP1584EN TSOT-23-8 (discrete circuit) | | 1.0 mm + L 2.5 mm + caps | ✅ | Discrete is safer than module |
-| MP1584EN module (pre-built) | | ~4 mm | ⚠ marginal | Use only for bench; go discrete on PCB |
-| **47 µF/35 V electrolytic (radial)** | | ~11 mm | ❌ | **Substitute:** 47 µF/35 V tantalum 1411 (4 × 4.5 × 3.8 mm) or 2× 22 µF/35 V ceramic 1210 |
-| 22 µH shielded inductor | | 2–3 mm | ✅ | SMD shielded types |
-| SS34 Schottky SMA | | 1 mm | ✅ | |
-| SMBJ28CA TVS SMB | | 2.4 mm | ✅ | |
-| Polyfuse 1812 | | 0.9 mm | ✅ | |
-| AO3401 P-MOSFET SOT-23 | | 1.1 mm | ✅ | |
-| 0603 passives | | 0.8 mm | ✅ | |
-
-**Headline substitution**: the input bulk cap (47 µF/35 V) must be a tantalum or a ceramic bank; a radial electrolytic will not fit.
+Alternative: mount buck + transceiver to the inside of the back cap or the underside of the diffuser... no, neither of those is accessible. They live in the interior floor between cradles.
 
 ## LEDs are not strips
 
@@ -199,16 +182,13 @@ High-level PCB wiring plan for the v1 (linear-chain) variant:
 | `LED_DATA` | MCU PA1 → 330 Ω series R → DIN of first LED → DOUT→DIN chain through all 25 → final DOUT to test pad | Serpentine route |
 | `UART_TX` / `UART_RX` / `DE` | MCU USART1 + one GPIO → MAX485 control pins | Keep short |
 
-## Constraints summary (for the PCB designer)
+## Build constraints (for the assembly person)
 
-- **Board outline:** 94 × 94 mm with 4 × pogo-pin notches (22 × 2 mm) and 8 × magnet-boss notches (10 × 3 mm). No corner cutouts needed.
-- **Corner screw holes:** 4 × M2 through-hole at tile-local (5, 5), (95, 5), (5, 95), (95, 95) → PCB-local (2, 2), (92, 2), (2, 92), (92, 92). Hole OD 2.2 mm.
-- **Centre pillar keep-out:** 10 × 10 mm area at tile-local (45, 45)–(55, 55) → PCB-local (42, 42)–(52, 52). No bottom-side components here; PCB bottom rests on the pillar top.
-- **LED grid:** 9 × SK6812 5050, front side, 30 mm pitch, centred at PCB-local (17, 47, 77) in both axes.
-- **Edge pads:** 8 contact pads per populated edge at 2.54 mm pitch, aligned with pogo pin positions. Gold-plated for low contact resistance. On the PCB **top face** (LED side) or as edge castellations — depends on pogo pin orientation choice, still under review.
-- **Max component height back-side:** 4 mm. Use low-profile SMD throughout; tantalum or ceramic bulk caps only.
-- **Ground:** heavy inner-layer pour. At least 2 oz copper on inner layers.
-- **Thermal:** LED array dissipates up to ~2.7 W at full white. Passive convection via back-face vents is sufficient; no active cooling or large copper pours required. Centre pillar provides a thermal path from the centre LED down to the frame back.
+- **MCU board** fits a pocket 26 × 20 mm at tile-local (3, 3) – (29, 23), retained by 1.2 mm ribs on ±Y long sides. Boards up to 24 × 18 mm work.
+- **9 LED modules** drop into cradles on 30 mm pitch centred at tile-local (20, 20) through (80, 80). Each cradle bay is 15 × 15 mm with a 1.2 mm lip — pre-made 15 × 15 mm SK6812 breakouts are the target fit. Smaller modules (e.g. 8 × 10 mm) need either a smaller `LED_MOD_XY` in the SCAD or a printed adapter plate.
+- **Pogo pin tips** are at z = 6.8 on every populated edge. Wire the module's edge-pad pigtails to each pin's inner tip — 32 pins per tile is a lot of hand-soldering; an edge-breakout mini-PCB (pre-made or custom) makes this tractable. Kept out of the SCAD for v1; pure flying-lead assembly works for the bench prototype.
+- **Max interior component height** (for buck, transceiver, wire bundles) between the back wall and the underside of the LED cradles = 4 mm. MP1584 modules fit with trimmed header pins; RS-485 breakouts fit easily.
+- **Thermal:** 9 LEDs × 60 mA @ 5 V = 2.7 W peak per tile. Passive convection via back-face vents handles this; no heat sinks or thermal grease needed.
 
 ## Open questions for the PCB design stage
 

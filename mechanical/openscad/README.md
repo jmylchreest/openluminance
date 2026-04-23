@@ -25,14 +25,14 @@ openscad -o tile-preview.png --imgsize=1200,900 \
 
 ## `tile.scad` — design notes
 
-### Assembly structure — two printed parts
+### Assembly structure — two printed parts (plus optional light guide)
 
 | Part | What it is | Interchangeable? |
 |---|---|---|
-| **Frame** | Main body — closed back (with ventilation slots), side walls, corner bosses, edge-magnet bosses, pogo pin holes. 100 × 100 × 13.5 mm. | No |
-| **Diffuser** | 100 × 100 × 1.5 mm panel covering the entire front of the tile edge-to-edge. A continuous rim on the underside press-fits into the frame opening — jar-lid closure. | **Yes** — swap for frosted, pixelated, coloured, or textured variants without touching the frame. |
+| **Frame** | Main body — closed back + vents, walls, edge-magnet bosses, pogo pin holes, **9 LED module cradles in a 3 × 3 grid**, **MCU dev-board retention pocket** in one corner. 100 × 100 × 13.5 mm. | No |
+| **Diffuser** | 100 × 100 × 1.5 mm panel covering the entire front edge-to-edge, continuous rim press-fit into the frame opening. | **Yes** — swap for different diffusion patterns |
 
-The back cap from earlier drafts has been merged into the frame as an integrated rear wall. Total part count per tile drops from three to two, and the diffuser running edge-to-edge means no visible frame lip interrupts the light when tiles sit adjacent.
+There is **no custom PCB** in the v1 tile. All electronics are pre-made drop-ins: 9 × SK6812 LED modules (15 × 15 mm each) slot into the cradles, and a pre-made MCU dev board (XIAO ESP32-C3, CH32V003 breakout, etc.) slides into the retention pocket. Buck + RS-485 breakout boards float in the gaps between cradles. Wiring is point-to-point with flying leads.
 
 Render a specific part by setting `RENDER`:
 
