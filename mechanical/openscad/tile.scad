@@ -62,7 +62,7 @@
 
 /* ============================ parameters ============================ */
 
-RENDER           = "assembly";   // "frame" | "diffuser" | "assembly"
+RENDER           = "assembly";   // "frame" | "diffuser" | "light_guide" | "assembly"
 
 // ----- overall -----
 TILE_SIZE        = 100;
@@ -90,9 +90,12 @@ LED_TOP_Z        = PCB_TOP_Z + LED_HEIGHT;             // 9.1
 DIFFUSER_GAP     = FRAME_H - LED_TOP_Z;                // 4.4 — plenty
 
 // ----- corner bosses (PCB screws and optional back magnets) -----
-CORNER_BOSS_XY   = 14;
+// Bosses stop at the PCB bottom face so the PCB sits flat on top of them.
+// Avoids the need for 10 × 10 mm corner cutouts in the PCB, preserving
+// the corner LED positions of the 5 × 5 grid.
+CORNER_BOSS_XY   = 10;                                 // reduced from 14
 CORNER_BOSS_Z_LO = BACK_THICK;                         // 2
-CORNER_BOSS_Z_HI = PCB_TOP_Z + 2;                      // 9.6
+CORNER_BOSS_Z_HI = PCB_BOTTOM_Z;                       // 6 (was 9.6)
 
 // ----- PCB retention -----
 PCB_SCREW_OD     = 2.2;      // M2 self-tapping clearance
@@ -170,14 +173,28 @@ RIM_T            = 1.2;      // rim wall thickness
 DIFF_PULL_W      = 12;       // finger-pry slot on one edge
 DIFF_PULL_D      = 1.2;
 
+// ----- light guide (optional 3rd part — distinct-pixel look) -----
+// 5 × 5 grid of pixel chambers that sits on top of the PCB, between the
+// LEDs and the diffuser. Each chamber is LED_PITCH × LED_PITCH. Walls
+// reflect stray light back into the intended cell, giving sharp pixel
+// boundaries. Without this part, light blends smoothly across the
+// diffuser.
+LED_COLS         = 5;
+LED_ROWS         = 5;
+LED_PITCH        = 20;       // mm between LED centres
+GUIDE_WALL_T     = 1.2;      // grid wall thickness
+GUIDE_WALL_H     = 5.0;      // wall height (PCB top → near diffuser)
+GUIDE_CLEAR      = 0.4;      // total per-side clearance vs interior
+
 /* ============================ rendering ============================ */
 
 $fn              = 48;
 
-if      (RENDER == "frame")    frame();
-else if (RENDER == "diffuser") diffuser();
-else if (RENDER == "assembly") assembly_exploded();
-else echo("RENDER must be \"frame\" | \"diffuser\" | \"assembly\"");
+if      (RENDER == "frame")       frame();
+else if (RENDER == "diffuser")    diffuser();
+else if (RENDER == "light_guide") light_guide();
+else if (RENDER == "assembly")    assembly_exploded();
+else echo("RENDER must be \"frame\" | \"diffuser\" | \"light_guide\" | \"assembly\"");
 
 
 /* ============================= assembly ============================= */
@@ -191,9 +208,14 @@ module assembly_exploded() {
     // edge magnets colour-coded by polarity
     if (EDGE_MAGNETS) ghost_edge_magnets();
 
-    // diffuser floated up for review
+    // light guide (optional) floated up a bit
+    color("white", 0.8)
+        translate([0, 0, TILE_HEIGHT + 3])
+            light_guide();
+
+    // diffuser floated up further
     color("white", 0.45)
-        translate([0, 0, TILE_HEIGHT + 6])
+        translate([0, 0, TILE_HEIGHT + 12])
             diffuser();
 
     // ghost PCB for context
@@ -451,6 +473,49 @@ module diffuser() {
         // finger-pry slot on one edge so the diffuser can be popped off
         translate([(TILE_SIZE - DIFF_PULL_W) / 2, -0.1, 0])
             cube([DIFF_PULL_W, DIFF_PULL_D + 0.1, DIFFUSER_THICK * 0.6]);
+    }
+}
+
+
+/* ============================ light guide ============================ */
+
+// Optional 5 × 5 pixel grid insert. Sits between PCB top (z = 7.6) and the
+// underside of the diffuser, reaching up to z = 7.6 + GUIDE_WALL_H.
+// Outer footprint matches the frame interior opening minus GUIDE_CLEAR.
+// Pure passive optic — just a wall grid. No retention features; held in
+// place by the PCB below and the diffuser rim above.
+//
+// Print orientation: walls build up from a flat base — print flat, walls
+// print as thin tall columns. Use 2–3 perimeters for wall reliability.
+// White PETG or PLA recommended (reflects stray light).
+module light_guide() {
+    outer = TILE_SIZE - 2 * WALL_THICK - 2 * GUIDE_CLEAR;   // ≈ 95.2
+    origin = (TILE_SIZE - outer) / 2;
+
+    // horizontal (along Y) interior walls at x = LED_PITCH, 2·LED_PITCH, ...
+    translate([origin, origin, 0]) {
+        // 5 × 5 lattice inside a bounding rectangle
+        // outer perimeter (optional — lets the guide self-align to the
+        // diffuser rim by matching its footprint)
+        difference() {
+            cube([outer, outer, GUIDE_WALL_H]);
+            translate([GUIDE_WALL_T, GUIDE_WALL_T, -0.1])
+                cube([outer - 2 * GUIDE_WALL_T,
+                      outer - 2 * GUIDE_WALL_T,
+                      GUIDE_WALL_H + 0.2]);
+        }
+        // interior walls along Y (vertical lines between X-columns)
+        for (c = [1 : LED_COLS - 1]) {
+            x = c * outer / LED_COLS - GUIDE_WALL_T / 2;
+            translate([x, 0, 0])
+                cube([GUIDE_WALL_T, outer, GUIDE_WALL_H]);
+        }
+        // interior walls along X (horizontal lines between Y-rows)
+        for (r = [1 : LED_ROWS - 1]) {
+            y = r * outer / LED_ROWS - GUIDE_WALL_T / 2;
+            translate([0, y, 0])
+                cube([outer, GUIDE_WALL_T, GUIDE_WALL_H]);
+        }
     }
 }
 
