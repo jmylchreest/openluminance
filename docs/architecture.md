@@ -133,13 +133,13 @@ Frame flow: master sends `SET_PIXELS` to each tile in turn (75 bytes RGB × 25 p
 
 ## Power math (why 24 V)
 
-Per tile worst case: 25 LEDs × 60 mA @ full white = 1.5 A @ 5 V = 7.5 W. 32-tile array = 240 W.
+Per tile worst case: 9 LEDs × 60 mA @ full white = 540 mA @ 5 V = 2.7 W. 32-tile array = 86 W. (The original 25-LED design pushed 7.5 W/tile / 240 W system; the tile is a lighting element, not a pixel-addressable display, so 9 LEDs is plenty and the numbers shrink.)
 
-At **5 V** chained: tile 1 carries 48 A. Nothing at this scale survives that in a small connector. Cumulative IR drop across realistic pogo/header contacts is >1.5 V by tile 4 — LEDs go dim and purple.
+At **5 V** chained: tile 1 carries 17 A. Pogo/header contacts can't carry that across many tiles without significant IR drop — LEDs go dim and off-colour down-chain.
 
-At **24 V** chained with per-tile buck (η ≈ 85 %): tile 1 carries ~12 A across the whole chain, drop per hop ≈ 0.3 V at 8-tile depth. Buck compensates by drawing slightly more current as input sags. **Self-correcting**.
+At **24 V** chained with per-tile buck (η ≈ 85 %): tile 1 carries ~4.3 A across the whole 32-tile chain, drop per hop ≈ 0.1 V. Buck compensates by drawing slightly more current as input sags. **Self-correcting**.
 
-System PSU: 24 V, **≥15 A** for 32 tiles (with margin). Mean Well LRS-350-24 or equivalent (~£30).
+System PSU: 24 V, **≥5 A** for 32 tiles (with margin). Mean Well LRS-100-24 or equivalent (~£15).
 
 ## Components per tile (high level)
 
@@ -148,12 +148,12 @@ System PSU: 24 V, **≥15 A** for 32 tiles (with margin). Mean Well LRS-350-24 o
 | MCU | CH32V003F4P6 (TSSOP-20) | 0.12 |
 | RS-485 transceiver | MAX485 / SP485EEN / MAX3485 | 0.35 |
 | Buck converter (24→5 V) | MP1584EN + L + Cs (discrete) | 0.60 |
-| LEDs | 25 × SK6812 RGBW | 4.25 |
+| LEDs | 9 × SK6812 RGBW (3 × 3 grid, 30 mm pitch) | 1.53 |
 | Protection | Polyfuse + TVS + rev-pol FET | 0.25 |
 | Edge connectors | 2× pin header or pogo strip | 0.80 |
 | PCB + passives | | 0.40 |
 | Enclosure + diffuser + magnets | | 0.80 |
-| **Total** | | **~£7.60** |
+| **Total** | | **~£5.31** |
 
 Detailed part numbers in [`../prototypes/4-tile-bench/parts-list.md`](../prototypes/4-tile-bench/parts-list.md).
 

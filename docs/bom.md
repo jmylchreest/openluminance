@@ -6,7 +6,7 @@ Prices in GBP, estimated from LCSC / Mouser volume pricing (qty 100+) unless mar
 
 | Component | Qty | Est. unit | Est. total | Notes |
 |---|---:|---:|---:|---|
-| SK6812 RGBW LED | 25 | £0.17 | £4.25 | Confirm with volume quote |
+| SK6812 RGBW LED | 9 | £0.17 | £1.53 | 3 × 3 grid at 30 mm pitch — brightness, not display |
 | CH32V003F4P6 MCU (TSSOP-20) | 1 | £0.12 | £0.12 | LCSC C5143676 |
 | MAX485 / SP485EEN RS-485 transceiver | 1 | £0.35 | £0.35 | SOIC-8, 5 V |
 | MP1584EN buck (24→5 V, 2 A) | 1 | £0.45 | £0.45 | TSOT-23-8 + L + Cs |
@@ -21,20 +21,20 @@ Prices in GBP, estimated from LCSC / Mouser volume pricing (qty 100+) unless mar
 | Neodymium magnets 5 × 2 mm | 4 | £0.10 | £0.40 | Mating assist |
 | PETG enclosure + alignment dowels | — | — | £0.30 | 3D printed |
 | Diffuser sheet | 1 | — | £0.10 | |
-| **Per-tile subtotal** | | | **~£8.03** | |
+| **Per-tile subtotal** | | | **~£5.31** | Down from £8.03 after cutting LED count from 25 to 9 |
 
 ## Per system (32-tile target)
 
 | Line item | Qty | Est. cost | Notes |
 |---|---:|---:|---|
-| Tiles | 32 | £257 | 32 × £8.03 |
+| Tiles | 32 | £170 | 32 × £5.31 |
 | ESP32-C3 master module | 1 | £5 | XIAO ESP32-C3 or equivalent |
 | Master-side MAX485 + biasing + termination | 1 | £2 | |
-| 24 V PSU | 1 | £30 | Mean Well LRS-350-24 (≈15 A) |
-| Power distribution cable + connectors | 1 | £15 | 2 × 14 AWG + DC barrel/terminal |
+| 24 V PSU | 1 | £15 | Mean Well LRS-100-24 (≈4 A) — 32 tiles × 2.7 W / 0.85 η / 24 V ≈ 4.3 A peak |
+| Power distribution cable + connectors | 1 | £10 | 2 × 18 AWG sufficient for ~5 A + DC barrel/terminal |
 | Array frame + back panel | 1 | £25 | Aluminium extrusion or plywood |
 | Miscellaneous (fasteners, cable ties, strain relief) | — | £10 | |
-| **System subtotal** | | **~£344** | |
+| **System subtotal** | | **~£237** | Down from £344 — LED count reduction drops PSU size too |
 
 ## Cost comparison vs. the original sketch
 

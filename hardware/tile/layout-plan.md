@@ -1,6 +1,29 @@
 # Tile PCB layout plan
 
-How the LED, MCU, buck, transceiver, and supporting components fit inside the 100 × 100 × 15 mm enclosure. Companion to [`../../mechanical/openscad/tile.scad`](../../mechanical/openscad/tile.scad) and [`../../docs/architecture.md`](../../docs/architecture.md). Drives the KiCad board outline before the first schematic spin.
+How the LED array, MCU, buck, transceiver, and supporting components fit inside the 100 × 100 × 15 mm enclosure. Companion to [`../../mechanical/openscad/tile.scad`](../../mechanical/openscad/tile.scad) and [`../../docs/architecture.md`](../../docs/architecture.md). Drives the KiCad board outline before the first schematic spin.
+
+## Topology: single PCB, sandwich layout
+
+**One PCB per tile.** LEDs (9 × SK6812 RGBW) on the **top face** facing the diffuser. Controller — CH32V003 MCU, MAX485 transceiver, MP1584 buck, passives — on the **bottom face** facing the back wall. The board is suspended on four corner bosses plus a central support pillar in the frame, floating above the back wall with room for the back-side components and a vent-cooled air pocket.
+
+```
+   ┌──────────────────────────────┐ ← diffuser (100 × 100, edge-to-edge)
+   │                              │
+   │     ·   ·   ·                │
+   │   (LED) (LED) (LED)          │ ← 9 × SK6812 on top face of PCB
+   │     ·   ·   ·                │
+   │   (LED) (LED) (LED)          │
+   │     ·   ·   ·                │
+   │   (LED) (LED) (LED)          │
+   │                              │
+   ├──────────────────────────────┤ ← PCB (94 × 94)
+   │  [MCU] [buck] [MAX485] …     │ ← controller parts on bottom face
+   │      ▓ centre pillar ▓       │
+   │                              │ ← 3 mm back-side component space
+   ├──────────────────────────────┤ ← frame back inner face
+   │     vvv     vvv     vvv      │ ← vent slots
+   └──────────────────────────────┘ ← frame back outer face
+```
 
 ## Space budget — what's actually available
 
@@ -13,7 +36,7 @@ How the LED, MCU, buck, transceiver, and supporting components fit inside the 10
                  │ 4.4 mm diffusion gap (air)
                  ↓
   z =  9.1 ────────── LED top (SK6812 body 1.5 mm above PCB)
-  z =  7.6 ────────── PCB top face ──── [ 25 × SK6812, pogo-pin pads ]
+  z =  7.6 ────────── PCB top face ──── [ 9 × SK6812 in 3×3 grid ]
   z =  6.0 ────────── PCB bottom face ── [ MCU, buck, transceiver, passives ]
                  ↑
                  │ 4.0 mm back-side component space
@@ -30,12 +53,13 @@ Features that cut into the 96 × 96 mm usable interior footprint:
 
 | Feature | Footprint | Qty | Area lost | Notes |
 |---|---|---:|---:|---|
-| Corner bosses | 10 × 10 mm | 4 | 400 mm² | Screw bosses, stop at z = 6 (under PCB) |
+| Corner bosses | 10 × 10 mm | 4 | 400 mm² | Screw bosses, stop at z = 6 (PCB rests on top) |
+| Centre support pillar | 10 × 10 mm | 1 | 100 mm² | Anti-flex support at tile centre, z = 2 → 6 |
 | Edge magnet bosses | 9 × 3 mm | 8 | 216 mm² | 2 per edge × 4 edges |
 | Pogo pin retainers | 22 × 2 mm | 4 | 176 mm² | 1 strip per edge, centred |
-| **Total intrusion** | | | **792 mm²** | out of 9 216 mm² interior |
+| **Total intrusion** | | | **892 mm²** | out of 9 216 mm² interior |
 
-The PCB must work around these features or notch around them.
+The PCB must work around these features or notch around them. The centre pillar is a 10 × 10 area at (45, 45)–(55, 55) in tile-local coords, directly under the centre LED — the PCB just needs a **clearance notch** or a keep-out polygon (no pad placement in that area), not a through-cut.
 
 ## PCB outline
 
@@ -78,13 +102,18 @@ With those notches the PCB keeps ≈ 94 × 94 mm minus ~1060 mm² of notches = *
 
 ## LED grid placement
 
-Twenty-five SK6812 RGBW 5050 packages at 20 mm pitch, centred in the tile:
+**Nine** SK6812 RGBW 5050 packages at 30 mm pitch, centred in the tile:
 
-- LED centres: tile-local (10, 30, 50, 70, 90) in both X and Y.
-- In PCB-local coordinates (PCB origin at tile (3, 3)): (7, 27, 47, 67, 87).
-- All 25 positions fall safely within the PCB after notches (notches are shallow and away from the LED grid — closest LED at (7, 7) is > 4 mm clear of the nearest corner boss).
+- LED centres: tile-local (20, 50, 80) in both X and Y.
+- In PCB-local coordinates (PCB origin at tile (3, 3)): (17, 47, 77).
+- The centre LED sits directly above the centre support pillar — good thermal path from the hottest LED in the tile down into the plastic frame and out through the back vents.
+- All 9 positions clear the corner bosses, magnet-boss notches, and pogo-pin retainer notches.
 
-Data chain: standard WS2812-style serpentine (row 0 left→right, row 1 right→left, etc.). Data input at LED (7, 7) from the MCU; data output from LED (87, 87) is terminated on a test pad (or left floating).
+Data chain: standard WS2812-style serpentine (row 0 left→right, row 1 right→left, row 2 left→right). DIN at LED (17, 17) from MCU PA1; DOUT from LED (77, 77) to a test pad.
+
+### Why 9, not 25
+
+Each tile is **one colour cell in the system**, not a pixel-addressable display. Nine SK6812 RGBW at 60 mA = ~540 mA @ 5 V = 2.7 W peak per tile, ~45 lumens of diffused ambient output. The diffuser blends them into a single uniform glow (or 9 distinct pixels if the optional light guide is fitted). Going to 25 triples the power, cost, and thermal load for no benefit if the tile isn't trying to draw an image.
 
 ## Back-side component placement
 
@@ -174,11 +203,12 @@ High-level PCB wiring plan for the v1 (linear-chain) variant:
 
 - **Board outline:** 94 × 94 mm with 4 × pogo-pin notches (22 × 2 mm) and 8 × magnet-boss notches (10 × 3 mm). No corner cutouts needed.
 - **Corner screw holes:** 4 × M2 through-hole at tile-local (5, 5), (95, 5), (5, 95), (95, 95) → PCB-local (2, 2), (92, 2), (2, 92), (92, 92). Hole OD 2.2 mm.
-- **LED grid:** 25 × SK6812 5050, front side, 20 mm pitch, centred at PCB-local (7, 27, 47, 67, 87).
+- **Centre pillar keep-out:** 10 × 10 mm area at tile-local (45, 45)–(55, 55) → PCB-local (42, 42)–(52, 52). No bottom-side components here; PCB bottom rests on the pillar top.
+- **LED grid:** 9 × SK6812 5050, front side, 30 mm pitch, centred at PCB-local (17, 47, 77) in both axes.
 - **Edge pads:** 8 contact pads per populated edge at 2.54 mm pitch, aligned with pogo pin positions. Gold-plated for low contact resistance. On the PCB **top face** (LED side) or as edge castellations — depends on pogo pin orientation choice, still under review.
 - **Max component height back-side:** 4 mm. Use low-profile SMD throughout; tantalum or ceramic bulk caps only.
 - **Ground:** heavy inner-layer pour. At least 2 oz copper on inner layers.
-- **Thermal:** LED array dissipates up to ~7.5 W at full white. Use large back-side copper pours connected to LED GND pads; leverage the back-face vent slots in the enclosure for convection.
+- **Thermal:** LED array dissipates up to ~2.7 W at full white. Passive convection via back-face vents is sufficient; no active cooling or large copper pours required. Centre pillar provides a thermal path from the centre LED down to the frame back.
 
 ## Open questions for the PCB design stage
 

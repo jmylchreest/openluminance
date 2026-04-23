@@ -173,18 +173,27 @@ RIM_T            = 1.2;      // rim wall thickness
 DIFF_PULL_W      = 12;       // finger-pry slot on one edge
 DIFF_PULL_D      = 1.2;
 
+// ----- LED grid (brightness-focused, not pixel display) -----
+// 3 × 3 = 9 SK6812 RGBW LEDs arranged in a grid, soldered to the top
+// face of the single tile PCB. 9 LEDs at ~45 lumens total gives even
+// ambient illumination across the 100 × 100 mm tile once the diffuser
+// spreads the light. More LEDs are unnecessary — each tile is one
+// colour cell in the system, not an image display.
+LED_COLS         = 3;
+LED_ROWS         = 3;
+LED_PITCH        = 30;       // mm between LED centres (positions 20/50/80)
+
 // ----- light guide (optional 3rd part — distinct-pixel look) -----
-// 5 × 5 grid of pixel chambers that sits on top of the PCB, between the
-// LEDs and the diffuser. Each chamber is LED_PITCH × LED_PITCH. Walls
-// reflect stray light back into the intended cell, giving sharp pixel
-// boundaries. Without this part, light blends smoothly across the
-// diffuser.
-LED_COLS         = 5;
-LED_ROWS         = 5;
-LED_PITCH        = 20;       // mm between LED centres
+// Grid of pixel chambers that sits on top of the PCB, between the LEDs
+// and the diffuser. Uses LED_COLS/LED_ROWS/LED_PITCH above, so it
+// automatically matches the LED grid.
 GUIDE_WALL_T     = 1.2;      // grid wall thickness
 GUIDE_WALL_H     = 5.0;      // wall height (PCB top → near diffuser)
 GUIDE_CLEAR      = 0.4;      // total per-side clearance vs interior
+
+// ----- central support pillar (reduces PCB flex on large single board) -----
+CENTRE_PILLAR_XY = 10;       // mm square, centred at tile midpoint
+CENTRE_PILLAR    = true;     // set false to omit
 
 /* ============================ rendering ============================ */
 
@@ -236,7 +245,8 @@ module frame() {
         union() {
             frame_shell();
             frame_corner_bosses();
-            if (CONN_TYPE == "pogo") frame_pogo_retainers();
+            if (CENTRE_PILLAR)        frame_centre_pillar();
+            if (CONN_TYPE == "pogo")  frame_pogo_retainers();
             if (EDGE_MAGNETS)         frame_edge_magnet_bosses();
         }
         // subtractions
@@ -246,6 +256,18 @@ module frame() {
         if (EDGE_MAGNETS) frame_edge_magnet_pockets();
         frame_pcb_screw_holes();
     }
+}
+
+module frame_centre_pillar() {
+    // Solid pillar from back inner face up to PCB bottom face. Prevents
+    // the 94 x 94 PCB from flexing between its four corner screws, and
+    // acts as a thermal bridge from the centre LED down to the frame
+    // back. No screw hole — PCB just rests against the pillar top.
+    x0 = (TILE_SIZE - CENTRE_PILLAR_XY) / 2;
+    y0 = (TILE_SIZE - CENTRE_PILLAR_XY) / 2;
+    translate([x0, y0, BACK_THICK])
+        cube([CENTRE_PILLAR_XY, CENTRE_PILLAR_XY,
+              PCB_BOTTOM_Z - BACK_THICK]);
 }
 
 // ---- shell: box with closed back + walls, open at z = FRAME_H -----
