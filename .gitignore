@@ -1,0 +1,44 @@
+# Build artifacts
+build/
+dist/
+*.o
+*.elf
+*.hex
+*.bin
+*.map
+
+# ESP-IDF / PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+sdkconfig.old
+
+# KiCad
+*-backups/
+*.bak
+*.kicad_prl
+fp-info-cache
+_autosave-*
+
+# OpenSCAD
+*.csg
+
+# Exported STLs from openscad/ during iteration (keep canonical ones in mechanical/stl/)
+mechanical/openscad/*.stl
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Environment
+.env
+.venv/
+__pycache__/
+node_modules/
+
+# Project-local tooling
+.aide/
+.claude/

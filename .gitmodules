@@ -1,0 +1,12 @@
+[submodule "thirdparty/BOSL2"]
+	path = thirdparty/BOSL2
+	url = https://github.com/BelfrySCAD/BOSL2.git
+[submodule "thirdparty/NopSCADlib"]
+	path = thirdparty/NopSCADlib
+	url = https://github.com/nophead/NopSCADlib.git
+[submodule "thirdparty/Round-Anything"]
+	path = thirdparty/Round-Anything
+	url = https://github.com/Irev-Dev/Round-Anything.git
+[submodule "thirdparty/threadlib"]
+	path = thirdparty/threadlib
+	url = https://github.com/adrianschlatter/threadlib.git
