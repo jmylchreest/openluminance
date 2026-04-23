@@ -80,9 +80,43 @@ Default parameters target a **double-ended spring-loaded pin, 1.0 mm OD body, 1.
 
 Render `RENDER = "assembly"` to see ghost pogo pins in their installed positions. Use this to visually verify they clear the PCB and the diffuser bay.
 
-### Magnets
+### Magnets — edge-to-edge attachment
 
-`MAG_OD = 5`, `MAG_H = 2`, `MAG_CLEAR_RAD = 0.15`, `MAG_CLEAR_AX = 0.2`. Pockets drilled from the back face into the four corner bosses, centred 8 mm in from each tile corner on the diagonal. At least 1 mm of material remains between the magnet pocket and the outer face (`MAG_POCKET_WALL`). Magnet polarity should be set at assembly time so only the "front" face of the tile attracts a metal backplate — prevents face-flipping.
+Tiles attach to adjacent tiles **edge-to-edge** (not back-to-back). Edge magnets sit in the side walls of each populated edge at two positions symmetric about the edge midpoint, so that when two tiles meet along their seam the magnet faces press against each other through a thin sliver of plastic.
+
+**Edge magnet geometry** (default 5 × 2 mm N42 neodymium discs):
+
+| Parameter | Default | Notes |
+|---|---:|---|
+| `EDGE_MAGNETS` | `true` | Cut edge magnet pockets on `CONN_EDGES` |
+| `EDGE_MAG_OFFSET` | 20 | mm, magnet centre from edge midpoint (one above, one below) |
+| `EDGE_MAG_BOSS_D` | 3 | mm, how far the interior reinforcement boss sticks in from the wall |
+| `EDGE_MAG_BOSS_W` | 9 | mm, Y-extent of each boss (> MAG_OD for margin) |
+| `EDGE_MAG_BOSS_H` | 8 | mm, Z-extent (only in the back half of the tile, so PCB doesn't need cutouts) |
+| `MAG_OD` | 5 | Magnet OD |
+| `MAG_H` | 2 | Magnet thickness |
+| `MAG_CLEAR_RAD` | 0.15 | Radial print clearance per side |
+| `MAG_CLEAR_AX` | 0.2 | Axial clearance — also the recess from the outer face |
+
+Pockets open **outward** so magnet faces are separated by only ~0.4 mm of print-clearance air when two tiles meet (MAG_CLEAR_AX × 2). Holding force is close to the "magnets touching" maximum. Plenty of boss material behind the pocket floor for structural strength.
+
+**Polarity — use the CCW-handed pattern:**
+
+```
+Traversing edges counter-clockwise around the tile:
+   +X edge    N outward at LOW Y,   S outward at HIGH Y
+   +Y edge    N outward at HIGH X,  S outward at LOW X
+   -X edge    N outward at HIGH Y,  S outward at LOW Y
+   -Y edge    N outward at LOW X,   S outward at HIGH X
+```
+
+With this rule, any edge pair mating in any orientation pairs N↔S automatically. A 180° in-plane rotation of one tile swaps the magnet positions but also swaps the polarities on each edge, so mating still works.
+
+In the `RENDER = "assembly"` view, ghost magnets are colour-coded: **red = N outward**, **blue = S outward**. Use this as an install reference.
+
+### Optional back-face magnets
+
+`BACK_MAGNETS = true` turns on the original back-face magnet pockets — one per corner boss, recessed from the back face. Use these **only** if you want the assembled tile to stick to a ferromagnetic backplate behind the wall (e.g. a steel sheet). They are **not required** for normal operation; edge magnets hold adjacent tiles together, and the array mounts to the wall via screws through the corner bosses or via a separate mounting rail. Default is `false`.
 
 ### Diffuser retention
 

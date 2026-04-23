@@ -111,12 +111,36 @@ HEADER_BODY_H    = 2.5;
 HEADER_SLOT_H    = HEADER_BODY_H + 1.0;
 
 // ----- magnets (neodymium disc) -----
+// Tiles attach to adjacent tiles edge-to-edge (not back-to-back). Edge
+// magnets live in the side walls on each populated edge so that when
+// tiles meet, magnet faces (or near-faces, through ~0 mm of plastic)
+// press together along the seam.
+//
+// POLARITY — use a "handed" pattern traversing CCW around the tile:
+//   +X edge: N outward at LOW Y, S outward at HIGH Y
+//   +Y edge: N outward at HIGH X, S outward at LOW X
+//   -X edge: N outward at HIGH Y, S outward at LOW Y
+//   -Y edge: N outward at LOW X, S outward at HIGH X
+//
+// With this rule, any edge mating with any other edge in any rotation
+// pairs N↔S automatically. If you rotate a tile 180° in-plane the
+// pattern on each edge swaps, and mating still works. Mark polarity
+// on the magnets (most vendors ship magnets pre-marked; a sharpie dot
+// on the N face works otherwise) and install consistently.
 MAG_OD           = 5;
 MAG_H            = 2;
 MAG_CLEAR_RAD    = 0.15;
 MAG_CLEAR_AX     = 0.2;
-MAG_POCKET_WALL  = 1.0;      // min material between magnet and outer face
-MAG_INSET        = 8;        // centre of magnet from tile corner (diagonal inset)
+MAG_POCKET_WALL  = 0.4;       // min material between magnet outer face and wall outer face
+
+EDGE_MAGNETS     = true;      // populate edge magnets on CONN_EDGES
+BACK_MAGNETS     = false;     // optional: back-face magnets for metal wall mount
+EDGE_MAG_OFFSET  = 20;        // mm, magnet centre from edge midpoint
+EDGE_MAG_BOSS_D  = 3;         // mm, boss extension inward from inner wall face
+EDGE_MAG_BOSS_W  = 9;         // mm, Y-extent of boss (> MAG_OD)
+EDGE_MAG_BOSS_H  = 8;         // mm, Z-extent of boss (back half of tile)
+
+BACK_MAG_INSET   = 8;         // mm (only used if BACK_MAGNETS == true)
 
 // ----- corner bosses carry magnets + PCB screws -----
 CORNER_BOSS_XY   = 14;
@@ -179,6 +203,10 @@ module assembly_exploded() {
                 LIP_THICK + DIFFUSER_THICK + PCB_BAY_D - PCB_THICK])
         cube([94, 94, PCB_THICK]);
 
+    // ghost edge magnets, colour-coded N (red) / S (blue) for the
+    // CCW-handed polarity rule.
+    if (EDGE_MAGNETS) ghost_edge_magnets();
+
     // net labels above each edge connector (echo only; does not render)
     echo("=== palindromic pinout on populated edges ===");
     echo("pin 1 (low Y)  = GND");
@@ -189,6 +217,47 @@ module assembly_exploded() {
     echo("pin 6          = BUS_A (paralleled with 3)");
     echo("pin 7          = V+    (paralleled with 2)");
     echo("pin 8 (high Y) = GND   (paralleled with 1)");
+    echo("=== edge magnet polarity (outward face) ===");
+    echo("+X edge: N at low Y, S at high Y");
+    echo("-X edge: S at low Y, N at high Y");
+    echo("(v2: +Y edge N at high X S at low X; -Y edge N at low X S at high X)");
+}
+
+// --- ghost magnets with N (red) / S (blue) polarity per the CCW rule ---
+module ghost_edge_magnets() {
+    z_center = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D + EDGE_MAG_BOSS_H / 2;
+
+    // CCW-handed rule for N-pole position on each edge:
+    //   +X edge: N at low Y
+    //   +Y edge: N at high X
+    //   -X edge: N at high Y
+    //   -Y edge: N at low X
+    // The "start" of each edge traversing CCW gets N.
+    for (e = CONN_EDGES) {
+        for (s = [-1, 1]) {
+            u = TILE_SIZE / 2 + s * EDGE_MAG_OFFSET;
+
+            // Determine polarity at this position
+            is_N = (e == 0 && s == -1) ||     // +X low Y
+                   (e == 1 && s ==  1) ||     // +Y high X
+                   (e == 2 && s ==  1) ||     // -X high Y
+                   (e == 3 && s == -1);       // -Y low X
+            col  = is_N ? "red" : "blue";
+
+            if (e == 0)
+                color(col) translate([TILE_SIZE - 1, u, z_center])
+                    rotate([0, 90, 0]) cylinder(h = MAG_H, d = MAG_OD);
+            else if (e == 2)
+                color(col) translate([1 - MAG_H, u, z_center])
+                    rotate([0, 90, 0]) cylinder(h = MAG_H, d = MAG_OD);
+            else if (e == 1)
+                color(col) translate([u, TILE_SIZE - 1, z_center])
+                    rotate([-90, 0, 0]) cylinder(h = MAG_H, d = MAG_OD);
+            else if (e == 3)
+                color(col) translate([u, 1 - MAG_H, z_center])
+                    rotate([-90, 0, 0]) cylinder(h = MAG_H, d = MAG_OD);
+        }
+    }
 }
 
 // ----- ghost pogo pins: render the pins in their installed positions ---
@@ -247,12 +316,14 @@ module frame() {
             frame_shell();
             frame_corner_bosses();
             frame_diffuser_clips();
-            if (CONN_TYPE == "pogo") frame_pogo_retainers();
+            if (CONN_TYPE == "pogo")  frame_pogo_retainers();
+            if (EDGE_MAGNETS)         frame_edge_magnet_bosses();
         }
         // subtractions
         frame_back_opening();     // the main hollow interior accessible from behind
         frame_connector_cuts();   // pogo pin holes or header slot
-        frame_magnet_pockets();
+        if (BACK_MAGNETS) frame_back_magnet_pockets();
+        if (EDGE_MAGNETS) frame_edge_magnet_pockets();
         frame_back_cap_ledge();   // step that the back cap sits into
         frame_pcb_screw_holes();
     }
@@ -291,21 +362,94 @@ module frame_corner_bosses() {
     }
 }
 
-module frame_magnet_pockets() {
-    // One magnet per corner, recessed from the BACK face.
-    // Depth: MAG_H + MAG_CLEAR_AX, leaves MAG_POCKET_WALL to the lip side.
+module frame_back_magnet_pockets() {
+    // Optional: one magnet per corner boss, recessed from the BACK face.
+    // Use these only if you want the assembled tile to stick to a
+    // ferromagnetic backplate behind the wall (e.g. a steel sheet).
+    // Most installs don't need these — tiles hold each other via the
+    // edge magnets, and the array sticks to the wall via screws or a
+    // separate mounting rail.
     pocket_d = MAG_OD + 2 * MAG_CLEAR_RAD;
     pocket_h = MAG_H + MAG_CLEAR_AX;
     z_from_back_face = TILE_HEIGHT - pocket_h;
-    if (z_from_back_face < LIP_THICK + MAG_POCKET_WALL)
-        echo("WARNING: magnet pocket too deep, collides with lip");
 
     for (xsign = [0, 1], ysign = [0, 1]) {
-        // position on the diagonal from the tile corner toward centre
-        x = xsign ? TILE_SIZE - MAG_INSET : MAG_INSET;
-        y = ysign ? TILE_SIZE - MAG_INSET : MAG_INSET;
+        x = xsign ? TILE_SIZE - BACK_MAG_INSET : BACK_MAG_INSET;
+        y = ysign ? TILE_SIZE - BACK_MAG_INSET : BACK_MAG_INSET;
         translate([x, y, z_from_back_face])
             cylinder(h = pocket_h + 0.1, d = pocket_d);
+    }
+}
+
+// -------- edge magnets: hold adjacent tiles together along the seam ----
+
+module frame_edge_magnet_bosses() {
+    // Thickened section on the INSIDE face of each populated edge, at two
+    // positions offset from the edge midpoint. Provides material behind
+    // the magnet pocket. Occupies the rear half of the tile (above PCB
+    // top) so the PCB doesn't need cutouts to clear them.
+    z_lo = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D;   // PCB top face
+    z_hi = z_lo + EDGE_MAG_BOSS_H;
+    zh   = z_hi - z_lo;
+
+    for (e = CONN_EDGES) {
+        for (s = [-1, 1]) {
+            u = TILE_SIZE / 2 + s * EDGE_MAG_OFFSET;
+            if (e == 0)         // +X edge
+                translate([TILE_SIZE - WALL_THICK - EDGE_MAG_BOSS_D,
+                           u - EDGE_MAG_BOSS_W / 2, z_lo])
+                    cube([EDGE_MAG_BOSS_D, EDGE_MAG_BOSS_W, zh]);
+            else if (e == 2)    // -X edge
+                translate([WALL_THICK,
+                           u - EDGE_MAG_BOSS_W / 2, z_lo])
+                    cube([EDGE_MAG_BOSS_D, EDGE_MAG_BOSS_W, zh]);
+            else if (e == 1)    // +Y edge
+                translate([u - EDGE_MAG_BOSS_W / 2,
+                           TILE_SIZE - WALL_THICK - EDGE_MAG_BOSS_D,
+                           z_lo])
+                    cube([EDGE_MAG_BOSS_W, EDGE_MAG_BOSS_D, zh]);
+            else if (e == 3)    // -Y edge
+                translate([u - EDGE_MAG_BOSS_W / 2, WALL_THICK, z_lo])
+                    cube([EDGE_MAG_BOSS_W, EDGE_MAG_BOSS_D, zh]);
+        }
+    }
+}
+
+module frame_edge_magnet_pockets() {
+    // Cylindrical pockets cut from the OUTSIDE face of each populated edge.
+    // Depth MAG_H + MAG_CLEAR_AX; opens outward so magnet faces can meet
+    // (or near-meet) when two tiles mate edge-to-edge.
+    //
+    // The pocket cuts through the 2 mm outer wall and ~0.2 mm into the
+    // boss behind it. Effective recess of the magnet outer face from the
+    // tile outer face = MAG_CLEAR_AX (~0.2 mm). Magnets installed by
+    // pressing into the pocket from outside. Structural material behind
+    // the pocket floor is ~ EDGE_MAG_BOSS_D - (pocket_h - WALL_THICK)
+    // ≈ 2.8 mm of boss material.
+    pocket_d = MAG_OD + 2 * MAG_CLEAR_RAD;
+    pocket_h = MAG_H + MAG_CLEAR_AX;
+    z_center = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D + EDGE_MAG_BOSS_H / 2;
+
+    for (e = CONN_EDGES) {
+        for (s = [-1, 1]) {
+            u = TILE_SIZE / 2 + s * EDGE_MAG_OFFSET;
+            if (e == 0)         // +X: cylinder extends +X, floor at x = TILE_SIZE - pocket_h
+                translate([TILE_SIZE - pocket_h, u, z_center])
+                    rotate([0, 90, 0])
+                        cylinder(h = pocket_h + 0.2, d = pocket_d);
+            else if (e == 2)    // -X: cylinder extends +X from x = -0.1
+                translate([-0.1, u, z_center])
+                    rotate([0, 90, 0])
+                        cylinder(h = pocket_h + 0.2, d = pocket_d);
+            else if (e == 1)    // +Y
+                translate([u, TILE_SIZE - pocket_h, z_center])
+                    rotate([-90, 0, 0])
+                        cylinder(h = pocket_h + 0.2, d = pocket_d);
+            else if (e == 3)    // -Y
+                translate([u, -0.1, z_center])
+                    rotate([-90, 0, 0])
+                        cylinder(h = pocket_h + 0.2, d = pocket_d);
+        }
     }
 }
 
