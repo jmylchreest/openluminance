@@ -25,27 +25,126 @@ openscad -o tile-preview.png --imgsize=1200,900 \
 
 ## `tile.scad` — design notes
 
-### Assembly structure — three printed parts
+### Assembly structure — two printed parts
 
 | Part | What it is | Interchangeable? |
 |---|---|---|
-| **Frame** | Main body — walls, corner bosses, magnet pockets, edge-connector features. One print per tile. | No |
-| **Diffuser** | Separate flat panel, 94 × 94 × 1.5 mm, drops into the frame from behind and is retained by the front lip + four interior clips. | **Yes** — swap for frosted, dotted, pixelated, or coloured variants without touching the frame. |
-| **Back cap** | Removable rear cover, snaps into a ledge around the frame's rear interior. Ventilated. | Yes — swap for different vent patterns or a solid cap. |
+| **Frame** | Main body — closed back (with ventilation slots), side walls, corner bosses, edge-magnet bosses, pogo pin holes. 100 × 100 × 13.5 mm. | No |
+| **Diffuser** | 100 × 100 × 1.5 mm panel covering the entire front of the tile edge-to-edge. A continuous rim on the underside press-fits into the frame opening — jar-lid closure. | **Yes** — swap for frosted, pixelated, coloured, or textured variants without touching the frame. |
 
-Render a specific part by setting `RENDER` at the top of the SCAD file:
+The back cap from earlier drafts has been merged into the frame as an integrated rear wall. Total part count per tile drops from three to two, and the diffuser running edge-to-edge means no visible frame lip interrupts the light when tiles sit adjacent.
+
+Render a specific part by setting `RENDER`:
 
 ```openscad
-RENDER = "frame";      // or "diffuser", "back_cap", "assembly"
+RENDER = "frame";      // or "diffuser", "assembly"
 ```
 
-`assembly` shows all three parts exploded along the Z axis along with ghost pogo pins — useful for design review; not for printing.
+`assembly` shows both parts exploded along the Z axis with ghost pogo pins and colour-coded magnets — for design review, not printing.
 
 ### Print orientation
 
-- **Frame:** lip face down on the build plate. The open back is the top of the print. No overhangs.
-- **Diffuser:** flat, either face down. 1.5 mm thick.
-- **Back cap:** outer face down, vents print as slot cuts (no bridging).
+- **Frame:** closed back face down on the build plate. Walls build upward; the open front is the top of the print. Back-face vent slots print cleanly as bridged voids (first layer + in-fill around slot openings). No overhangs elsewhere.
+- **Diffuser:** flat, rim side up or down either works. The rim is thin (1.2 mm) but short (3 mm) so it prints reliably in any orientation.
+
+### How the diffuser stays on
+
+The diffuser has a continuous rectangular rim descending from its back face that matches the frame's interior opening minus a per-side `RIM_CLEAR` (0.20 mm default). When pressed in, the rim's outer surfaces slide against the frame wall interiors along all four sides — a friction press-fit. No discrete clips to fatigue, no snap bumps, no high-stress contact points.
+
+Assembly / service: press diffuser on from the front; to remove, insert a fingernail or plastic spudger into the `DIFF_PULL_W` (12 mm) notch cut into one edge of the diffuser and lift. The diffuser comes off clean, PCB is now accessible from the front.
+
+| Parameter | Default | Effect |
+|---|---:|---|
+| `DIFFUSER_THICK` | 1.5 | Visible panel thickness |
+| `RIM_DEPTH` | 3.0 | How far the rim descends into the frame |
+| `RIM_T` | 1.2 | Rim wall thickness |
+| `RIM_CLEAR` | 0.20 | Per-side clearance between rim outer and frame inner. **Tune this** if your printer over- or under-extrudes. Smaller = tighter; 0.05 is a very firm fit, 0.30 is loose. |
+| `DIFF_PULL_W` | 12 | Finger-pry notch width |
+| `DIFF_PULL_D` | 1.2 | Finger-pry notch depth |
+
+### Coordinate system
+
+- `z = 0` — closed back outer face (build plate when printing)
+- `z = BACK_THICK` — back inner face (interior begins here)
+- `z = FRAME_H` (= 13.5 mm) — top of frame walls (where diffuser rim meets the frame)
+- `z = TILE_HEIGHT` (= 15 mm) — diffuser front face
+
+Interior layout:
+
+```
+  z = 15.0  ┌─────────────── diffuser front face
+  z = 13.5  ├─── diffuser back = frame wall top ───┐
+                ▲                                 │
+  z =  9.1  ─── ▼ LED top (SK6812 on PCB front)   │  diffuser rim
+  z =  7.6  ─── PCB top face                      │  descends 3 mm
+  z =  6.0  ─── PCB bottom face                   │  into frame
+                ▲
+  z =  2.0  ─── back inner face            ───────┘
+  z =  0.0  ───────────────── back outer face (build plate)
+```
+
+### The 8-pin edge connector — all four edges populated by default
+
+The frame cuts pogo pin holes on all four edges (`CONN_EDGES = [0, 1, 2, 3]`) so the mechanical tile is ready for v2 free-form mesh topology with no re-print. Matches the palindromic spec in [`docs/architecture.md`](../../docs/architecture.md).
+
+```
+  Reading along +X edge, low Y → high Y:
+    pin 1 GND, 2 V+, 3 A, 4 B, 5 B, 6 A, 7 V+, 8 GND
+```
+
+Connector z-centre coincides with the PCB mid-plane at `CONN_Z_CENTER = 6.8`. Set `CONN_TYPE = "header"` for the bench prototype (1×8 header slot instead of individual pin holes).
+
+### Pogo pins — short spring contacts, not deep breakouts
+
+Tiles sit essentially wall-to-wall when mated. The pogo pins are intentionally short so the tiles don't need a gap between them — only enough length to make contact and compress ~0.5 mm per side under magnetic clamping force:
+
+| Parameter | Default | Notes |
+|---|---:|---|
+| `POGO_FREE_LEN` | 5.0 mm | Uncompressed tip-to-tip |
+| `POGO_COMPRESSED` | 4.0 mm | ~20 % compression when mated |
+| `POGO_WALL_EXPOSE` | 0.5 mm | Tip protrusion past outer wall face at rest |
+| `POGO_PIN_OD` / `POGO_FLANGE_OD` | 1.0 / 1.5 mm | Standard short-pogo format |
+
+Sourcing: search AliExpress / LCSC for "short pogo pin 5mm 1.0mm OD" or "P50-B short spring contact". These are the same family used in pogo-pin testing jigs and magnetic breakouts.
+
+### 24 V power rail — distributed by the PCB, not by the frame
+
+Power is **not** a separate physical bus bar inside the frame. `V+` and `GND` pins on every populated edge tie to common `V+` / `GND` nets on the PCB — so power enters through any edge connector and exits on any other. The per-tile buck converter taps the local net.
+
+With all four edges populated:
+
+- **Power flows in any direction** through the tile array. No dedicated power-injection edge.
+- **Chain topology on the bus** is still possible (and preferred for v1) — the PCB simply leaves `BUS_A` / `BUS_B` unrouted on 2 of the 4 edges. Frame geometry is the same.
+- **v2 mesh bus** will use per-edge analogue switches (TS5A3166 or similar) under MCU control so any 2 edges can be active on the bus at a time.
+
+### Magnets — edge-to-edge attachment
+
+Tiles attach to adjacent tiles on the side walls. Two 5 × 2 mm neodymium discs per populated edge, offset from the edge midpoint.
+
+| Parameter | Default | Notes |
+|---|---:|---|
+| `EDGE_MAGNETS` | `true` | Cut edge magnet pockets on `CONN_EDGES` |
+| `EDGE_MAG_OFFSET` | 20 | mm, from edge midpoint |
+| `EDGE_MAG_BOSS_D` | 3 | mm, boss extension inward from wall |
+| `EDGE_MAG_Z_CENT` | 7.75 | Automatically = `(BACK_THICK + FRAME_H) / 2` |
+| `MAG_CLEAR_AX` | 0.2 | Axial clearance = recess from outer face |
+
+Pockets open outward; installed magnets recess ~0.2 mm from the tile's outer face. When two tiles mate edge-to-edge the magnet faces are separated by only ~0.4 mm of air (print clearance both sides).
+
+**Polarity (CCW-handed rule):**
+
+```
+  +X edge   N outward at LOW Y,   S outward at HIGH Y
+  +Y edge   N outward at HIGH X,  S outward at LOW X
+  -X edge   N outward at HIGH Y,  S outward at LOW Y
+  -Y edge   N outward at LOW X,   S outward at HIGH X
+```
+
+In `RENDER = "assembly"`, ghost magnets are colour-coded **red = N outward**, **blue = S outward**. Use this as the install reference.
+
+### Optional back-face magnets
+
+`BACK_MAGNETS = true` cuts four additional magnet pockets into the corner bosses, recessed from the back face. Use only if the array will stick to a ferromagnetic backplate behind the wall. Default is `false`.
 
 ### The 8-pin edge connector — matches the architecture doc
 

@@ -1,519 +1,344 @@
-// openluminance — tile mechanical assembly, draft v0.2
+// openluminance — tile mechanical assembly, draft v0.3
 //
-// Three-part assembly: FRAME (main print), DIFFUSER (interchangeable panel),
-// BACK_CAP (removable cover with PCB access).
+// TWO-PIECE print: FRAME (main body, closed back, open front) + DIFFUSER
+// (100 × 100 × 1.5 mm panel with a continuous inner rim that press-fits
+// into the frame opening). The back cap of earlier drafts is merged into
+// the frame as an integrated rear wall with ventilation slots.
+//
+// The diffuser covers the entire front face edge-to-edge, so when two
+// tiles sit side-by-side the glow runs continuously across the seam —
+// no visible frame lip interrupting the line.
+//
+// Overall assembled height: 15 mm (frame 13.5 mm + diffuser 1.5 mm).
 //
 // EDGE CONNECTOR — matches the 8-pin palindromic spec in
-// docs/architecture.md. Mechanical-electrical alignment from the PCB's
-// perspective, reading pins 1..8 at increasing Y along the +X edge:
+// docs/architecture.md. Reading pins 1..8 at increasing Y along the +X
+// edge:
 //
-//     pin 1  (lowest Y)  →  GND
-//     pin 2              →  V+  (24 V backbone)
-//     pin 3              →  BUS_A  (RS-485 A)
-//     pin 4              →  BUS_B  (RS-485 B)
-//     pin 5              →  BUS_B  (paralleled with pin 4)
-//     pin 6              →  BUS_A  (paralleled with pin 3)
-//     pin 7              →  V+     (paralleled with pin 2)
-//     pin 8  (highest Y) →  GND    (paralleled with pin 1)
+//     pin 1 (low Y)  → GND
+//     pin 2          → V+   (24 V backbone)
+//     pin 3          → BUS_A
+//     pin 4          → BUS_B
+//     pin 5          → BUS_B  (paralleled with pin 4)
+//     pin 6          → BUS_A  (paralleled with pin 3)
+//     pin 7          → V+     (paralleled with pin 2)
+//     pin 8 (high Y) → GND    (paralleled with pin 1)
 //
-// This arrangement reads identically forwards and backwards, so a tile
-// flipped 180° in-plane still mates correctly pin-for-pin. Every signal
-// is carried on two pins in parallel — contact resistance halves and a
-// single dirty pin does not break the link.
+// 24 V POWER RAIL — not a separate bus bar. It's distributed by the PCB:
+// V+ pins on every populated edge tie to a single V+ net; GND pins all
+// tie to a single GND net. Power enters on any edge, exits on any
+// (unoccupied) neighbouring edge. The buck converter on the PCB taps
+// this net locally. With all 4 edges populated, power can flow in any
+// direction through the tile array — no dedicated power-injection edge
+// required.
 //
-// Pin positions are set by CONN_PINS and CONN_PITCH below; the SCAD
-// model is agnostic to which pin is which net — it just places the holes.
-// The PCB layout in hardware/tile/ assigns nets to pin positions per the
-// table above.
+// BUS_A and BUS_B behave similarly for the RS-485 signal, with one
+// wrinkle: a full 4-edge tie would make the bus a mesh with reflections.
+// The v1 PCB populates BUS_A/BUS_B on only two edges (one chain). v2
+// PCBs will use per-edge analogue switches (e.g. TS5A3166) to make the
+// bus routable under firmware control. The frame geometry is the same
+// for both.
 //
-// Overall dimensions: 100 × 100 × 15 mm. Design for FDM print on a 0.4 mm
-// nozzle. PETG or translucent PLA for the diffuser, PETG / PLA / ABS for
-// the frame and back cap.
+// EDGE MAGNETS — tiles attach edge-to-edge. Two magnets per populated
+// edge, offset from the edge midpoint. Polarity follows a CCW-handed
+// rule so any edge pair mates correctly in any rotation:
 //
-// Assembled orientation (viewer looking at the tile on a wall):
+//     +X edge    N outward at LOW Y,   S outward at HIGH Y
+//     +Y edge    N outward at HIGH X,  S outward at LOW X
+//     -X edge    N outward at HIGH Y,  S outward at LOW Y
+//     -Y edge    N outward at LOW X,   S outward at HIGH X
 //
-//       ┌─────────────────────────────────┐   ← diffuser face (you see this)
-//       │                                 │
-//       │     (FRAME lip, 4 mm wide)      │
-//       │  ┌───────────────────────────┐  │
-//       │  │                           │  │
-//       │  │   88 × 88 mm open area    │  │
-//       │  │     LEDs shine through    │  │
-//       │  │      the diffuser         │  │
-//       │  │                           │  │
-//       │  └───────────────────────────┘  │
-//       │                                 │
-//       └─────────────────────────────────┘
-//            ↑                           ↑
-//            edge connector (pogo)       edge connector (pogo)
+// COORDINATE SYSTEM — the SCAD model uses "use orientation":
+//     z = 0           → closed back outer face (build plate when printing)
+//     z = BACK_THICK  → back inner face (interior begins)
+//     z = FRAME_H     → top of the frame walls (where the diffuser sits)
+//     z = TILE_HEIGHT → diffuser front face (assembled tile outer front)
 //
-// Stack-up (front → back):
-//   FRAME lip                          z = 0 (top, in render)
-//   DIFFUSER (1.5 mm panel)            z = 1.5–3.0 mm
-//   air gap + LED height               z = 3.0–5.5 mm
-//   PCB (1.6 mm)                       z = 5.5–7.1 mm
-//   BACK_CAP inner face                z = 13.0 mm
-//   BACK_CAP outer face                z = 15.0 mm
+// PRINT ORIENTATION — frame prints back-face DOWN on the build plate, no
+// overhangs except the back-face vent slots (bridges cleanly). Diffuser
+// prints flat, rim up or down either way.
 //
-// Print orientation:
-//   FRAME   → lip face down on build plate. No overhangs. PCB supports print
-//              as vertical columns.
-//   DIFFUSER→ flat, either face down. 1.5 mm is 4 × 0.3 mm layers or similar.
-//   BACK_CAP→ outer face down. Simple rectangular print.
-//
-// Render part selection:  set RENDER = "frame" | "diffuser" | "back_cap" |
-// "assembly" at the top of this file before exporting.
+// Set RENDER at the top to export a specific part.
 
 /* ============================ parameters ============================ */
 
-RENDER           = "assembly";   // "frame" | "diffuser" | "back_cap" | "assembly"
+RENDER           = "assembly";   // "frame" | "diffuser" | "assembly"
 
 // ----- overall -----
 TILE_SIZE        = 100;
 TILE_HEIGHT      = 15;
 
-// ----- frame -----
-WALL_THICK       = 2;
-LIP_WIDTH        = 4;       // perimeter lip that retains diffuser, inward from walls
-LIP_THICK        = 1.5;     // thickness of the retaining lip
-DIFFUSER_BAY_D   = 2;       // depth of the bay that accepts the diffuser (past the lip)
-PCB_BAY_D        = 4;       // bay depth from diffuser bottom to PCB top
-PCB_THICK        = 1.6;
-BACK_CAP_THICK   = 2;       // back cap thickness
-
-// ----- diffuser -----
-DIFFUSER_CLEAR   = 0.3;      // total clearance per axis for diffuser fit (halved on each side)
+// ----- split: frame height + diffuser thickness = TILE_HEIGHT -----
 DIFFUSER_THICK   = 1.5;
+FRAME_H          = TILE_HEIGHT - DIFFUSER_THICK;   // 13.5
 
-// ----- back cap -----
-BACK_CAP_CLEAR   = 0.25;     // clearance for snap fit
-BACK_CAP_SNAP_H  = 1.0;      // height of snap tab
-BACK_CAP_SNAP_W  = 8;        // width of snap tab
+// ----- frame walls and back -----
+WALL_THICK       = 2;
+BACK_THICK       = 2;     // integrated rear wall (was the "back cap")
+
+// ----- interior PCB bay -----
+PCB_THICK        = 1.6;
+PCB_BACK_SPACE   = 4;     // between inner back face and PCB bottom face
+                          // (budget for SMD components on the PCB back)
+PCB_BOTTOM_Z     = BACK_THICK + PCB_BACK_SPACE;        // 6.0
+PCB_TOP_Z        = PCB_BOTTOM_Z + PCB_THICK;           // 7.6
+PCB_CENTER_Z     = (PCB_BOTTOM_Z + PCB_TOP_Z) / 2;     // 6.8
+
+// LED height above PCB top (SK6812 5050 ~1.4 mm body)
+LED_HEIGHT       = 1.5;
+LED_TOP_Z        = PCB_TOP_Z + LED_HEIGHT;             // 9.1
+DIFFUSER_GAP     = FRAME_H - LED_TOP_Z;                // 4.4 — plenty
+
+// ----- corner bosses (PCB screws and optional back magnets) -----
+CORNER_BOSS_XY   = 14;
+CORNER_BOSS_Z_LO = BACK_THICK;                         // 2
+CORNER_BOSS_Z_HI = PCB_TOP_Z + 2;                      // 9.6
+
+// ----- PCB retention -----
+PCB_SCREW_OD     = 2.2;      // M2 self-tapping clearance
+PCB_HOLE_INSET   = 4;        // screw hole from tile corner
 
 // ----- edge connector -----
 CONN_TYPE        = "pogo";   // "pogo" | "header"
 CONN_PINS        = 8;
 CONN_PITCH       = 2.54;
-CONN_EDGES       = [0, 2];   // 0=+X, 1=+Y, 2=-X, 3=-Y. v1: [0,2]. v2: [0,1,2,3].
+// Populate ALL FOUR edges by default. The frame supplies the geometry;
+// the PCB decides which edges' signal pins are tied together (see
+// header comment on 24 V power rail). Set to [0, 2] to model a v1
+// PCB that only routes a linear chain.
+CONN_EDGES       = [0, 1, 2, 3];   // 0=+X, 1=+Y, 2=-X, 3=-Y
 
-// pogo pin (double-ended spring, 1.0 mm pin OD, 1.5 mm flange OD, 8 mm free length)
+// SHORT double-ended pogo pin — just enough to protrude and make contact
+// when tiles sit essentially wall-to-wall. Common "short spring contact"
+// or "short pogo pin" format on LCSC / AliExpress — search for e.g.
+// "1.0mm pogo pin 5mm" or "P50-B short spring contact".
+//
+//   free length        5.0 mm (tip-to-tip, uncompressed)
+//   compressed        ~4.0 mm
+//   wall exposure      0.5 mm at each tile's outer face (at rest)
+//   compressed gap     2 × 0.5 = 1 mm compression when mated (0.5 per side)
+//   wall-to-wall gap  ~0 mm — tiles sit flush, springs loaded
 POGO_PIN_OD      = 1.0;
-POGO_PIN_HOLE    = 1.1;      // PCB-side & frame through-hole
+POGO_PIN_HOLE    = 1.1;
 POGO_FLANGE_OD   = 1.5;
 POGO_FLANGE_H    = 0.6;
-POGO_FREE_LEN    = 8.0;      // uncompressed total length
-POGO_COMPRESSED  = 5.5;      // typical compressed length
-POGO_WALL_EXPOSE = 2.5;      // how much pin protrudes past the outer wall when un-mated
+POGO_FREE_LEN    = 5.0;
+POGO_COMPRESSED  = 4.0;
+POGO_WALL_EXPOSE = 0.5;
 
-// 1×8 pin header fallback (CONN_TYPE = "header")
-HEADER_BODY_W    = CONN_PINS * CONN_PITCH + 0.8;   // ~21.1 mm
+// 1×8 pin header fallback
+HEADER_BODY_W    = CONN_PINS * CONN_PITCH + 0.8;
 HEADER_BODY_H    = 2.5;
 HEADER_SLOT_H    = HEADER_BODY_H + 1.0;
 
-// ----- magnets (neodymium disc) -----
-// Tiles attach to adjacent tiles edge-to-edge (not back-to-back). Edge
-// magnets live in the side walls on each populated edge so that when
-// tiles meet, magnet faces (or near-faces, through ~0 mm of plastic)
-// press together along the seam.
-//
-// POLARITY — use a "handed" pattern traversing CCW around the tile:
-//   +X edge: N outward at LOW Y, S outward at HIGH Y
-//   +Y edge: N outward at HIGH X, S outward at LOW X
-//   -X edge: N outward at HIGH Y, S outward at LOW Y
-//   -Y edge: N outward at LOW X, S outward at HIGH X
-//
-// With this rule, any edge mating with any other edge in any rotation
-// pairs N↔S automatically. If you rotate a tile 180° in-plane the
-// pattern on each edge swaps, and mating still works. Mark polarity
-// on the magnets (most vendors ship magnets pre-marked; a sharpie dot
-// on the N face works otherwise) and install consistently.
+// connector z-center: coincides with PCB centre height
+CONN_Z_CENTER    = PCB_CENTER_Z;                       // 6.8
+
+// ----- magnets (neodymium 5 × 2 mm discs) -----
 MAG_OD           = 5;
 MAG_H            = 2;
 MAG_CLEAR_RAD    = 0.15;
 MAG_CLEAR_AX     = 0.2;
-MAG_POCKET_WALL  = 0.4;       // min material between magnet outer face and wall outer face
 
-EDGE_MAGNETS     = true;      // populate edge magnets on CONN_EDGES
-BACK_MAGNETS     = false;     // optional: back-face magnets for metal wall mount
-EDGE_MAG_OFFSET  = 20;        // mm, magnet centre from edge midpoint
-EDGE_MAG_BOSS_D  = 3;         // mm, boss extension inward from inner wall face
-EDGE_MAG_BOSS_W  = 9;         // mm, Y-extent of boss (> MAG_OD)
-EDGE_MAG_BOSS_H  = 8;         // mm, Z-extent of boss (back half of tile)
+EDGE_MAGNETS     = true;
+BACK_MAGNETS     = false;   // only needed for metal-backplate wall mount
+EDGE_MAG_OFFSET  = 20;      // from edge midpoint along the edge
+EDGE_MAG_BOSS_D  = 3;       // inward extension from inner wall face
+EDGE_MAG_BOSS_W  = 9;       // width along edge (> MAG_OD)
+EDGE_MAG_BOSS_H  = 8;       // Z-extent of boss
+// centre the magnets at the vertical midpoint of the frame interior
+EDGE_MAG_Z_CENT  = (BACK_THICK + FRAME_H) / 2;         // 7.75
+EDGE_MAG_BOSS_ZL = EDGE_MAG_Z_CENT - EDGE_MAG_BOSS_H/2;
+EDGE_MAG_BOSS_ZH = EDGE_MAG_Z_CENT + EDGE_MAG_BOSS_H/2;
 
-BACK_MAG_INSET   = 8;         // mm (only used if BACK_MAGNETS == true)
+BACK_MAG_INSET   = 8;       // from tile corner, diagonal (BACK_MAGNETS = true)
 
-// ----- corner bosses carry magnets + PCB screws -----
-CORNER_BOSS_XY   = 14;
-PCB_SCREW_OD     = 2.2;      // M2 screw clearance
-PCB_SCREW_HEAD   = 4.0;      // counterbore OD (not used in main print, reference only)
+// ----- back ventilation slots -----
+BACK_VENT_W      = 3;
+BACK_VENT_L      = 30;
+BACK_VENT_ROWS   = 3;
 
-// ----- PCB retention -----
-PCB_HOLE_INSET   = 4;        // distance of mounting holes from tile corner (matches PCB design)
+// ----- diffuser rim (press-fit into frame interior opening) -----
+// Diffuser is a 100 × 100 × DIFFUSER_THICK panel. On its back face, a
+// continuous downward rim matches the frame's interior opening, creating
+// a press-fit jar-lid closure. Light interference fit (negative
+// clearance) gives a firm hold; bump to RIM_CLEAR = 0.05 if your printer
+// over-extrudes.
+RIM_CLEAR        = 0.20;     // per-side clearance (smaller = tighter)
+RIM_DEPTH        = 3.0;      // how far the rim descends into the frame
+RIM_T            = 1.2;      // rim wall thickness
+DIFF_PULL_W      = 12;       // finger-pry slot on one edge
+DIFF_PULL_D      = 1.2;
 
-// ----- diffuser retention clips on frame interior -----
-DIFF_CLIP_W      = 10;
-DIFF_CLIP_H      = 0.8;      // clip protrusion into the diffuser bay
-DIFF_CLIP_COUNT_PER_SIDE = 2;
+/* ============================ rendering ============================ */
 
-// ----- back cap magnet access (none; magnets sit in frame corner bosses) -----
-
-// ----- rendering aesthetics -----
 $fn              = 48;
 
-// ----- derived -----
-LIP_INNER_SIZE   = TILE_SIZE - 2 * (WALL_THICK + LIP_WIDTH);   // 88 for defaults
-DIFF_SIZE        = TILE_SIZE - 2 * WALL_THICK - DIFFUSER_CLEAR; // sits inside walls
-BACK_CAP_OUTER   = TILE_SIZE - 2 * BACK_CAP_CLEAR;              // slides inside walls from behind
-BACK_CAP_FRAME_OPENING = TILE_SIZE - 2 * WALL_THICK;            // size of the back opening in the frame
-
-/* ============================== entry ============================== */
-
-if (RENDER == "frame")        frame();
+if      (RENDER == "frame")    frame();
 else if (RENDER == "diffuser") diffuser();
-else if (RENDER == "back_cap") back_cap();
 else if (RENDER == "assembly") assembly_exploded();
-else echo("unknown RENDER value");
+else echo("RENDER must be \"frame\" | \"diffuser\" | \"assembly\"");
 
 
-/* ============================== modules ============================== */
+/* ============================= assembly ============================= */
 
-// -------- assembly view (exploded for review; not for printing) --------
 module assembly_exploded() {
-    // frame at z = 0
     color("lightgrey") frame();
 
-    // pogo pins installed in their frame holes (if CONN_TYPE == "pogo")
-    if (CONN_TYPE == "pogo")
-        color("gold", 0.9) ghost_pogo_pins();
+    // pogo pins installed in the frame (visualisation only)
+    if (CONN_TYPE == "pogo") color("gold", 0.9) ghost_pogo_pins();
 
-    // diffuser floated up
-    color("white", 0.4)
-        translate([0, 0, TILE_HEIGHT + 6])
-            translate([TILE_SIZE/2, TILE_SIZE/2, 0])
-                translate([-DIFF_SIZE/2, -DIFF_SIZE/2, 0])
-                    diffuser();
-
-    // back cap floated up further
-    color("darkgrey", 0.9)
-        translate([0, 0, TILE_HEIGHT + 16])
-            back_cap();
-
-    // ghost PCB for context
-    %translate([(TILE_SIZE - 94) / 2, (TILE_SIZE - 94) / 2,
-                LIP_THICK + DIFFUSER_THICK + PCB_BAY_D - PCB_THICK])
-        cube([94, 94, PCB_THICK]);
-
-    // ghost edge magnets, colour-coded N (red) / S (blue) for the
-    // CCW-handed polarity rule.
+    // edge magnets colour-coded by polarity
     if (EDGE_MAGNETS) ghost_edge_magnets();
 
-    // net labels above each edge connector (echo only; does not render)
+    // diffuser floated up for review
+    color("white", 0.45)
+        translate([0, 0, TILE_HEIGHT + 6])
+            diffuser();
+
+    // ghost PCB for context
+    %translate([(TILE_SIZE - 94) / 2, (TILE_SIZE - 94) / 2, PCB_BOTTOM_Z])
+        cube([94, 94, PCB_THICK]);
+
     echo("=== palindromic pinout on populated edges ===");
-    echo("pin 1 (low Y)  = GND");
-    echo("pin 2          = V+ (24 V)");
-    echo("pin 3          = BUS_A");
-    echo("pin 4          = BUS_B");
-    echo("pin 5          = BUS_B (paralleled with 4)");
-    echo("pin 6          = BUS_A (paralleled with 3)");
-    echo("pin 7          = V+    (paralleled with 2)");
-    echo("pin 8 (high Y) = GND   (paralleled with 1)");
-    echo("=== edge magnet polarity (outward face) ===");
-    echo("+X edge: N at low Y, S at high Y");
-    echo("-X edge: S at low Y, N at high Y");
-    echo("(v2: +Y edge N at high X S at low X; -Y edge N at low X S at high X)");
-}
-
-// --- ghost magnets with N (red) / S (blue) polarity per the CCW rule ---
-module ghost_edge_magnets() {
-    z_center = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D + EDGE_MAG_BOSS_H / 2;
-
-    // CCW-handed rule for N-pole position on each edge:
-    //   +X edge: N at low Y
-    //   +Y edge: N at high X
-    //   -X edge: N at high Y
-    //   -Y edge: N at low X
-    // The "start" of each edge traversing CCW gets N.
-    for (e = CONN_EDGES) {
-        for (s = [-1, 1]) {
-            u = TILE_SIZE / 2 + s * EDGE_MAG_OFFSET;
-
-            // Determine polarity at this position
-            is_N = (e == 0 && s == -1) ||     // +X low Y
-                   (e == 1 && s ==  1) ||     // +Y high X
-                   (e == 2 && s ==  1) ||     // -X high Y
-                   (e == 3 && s == -1);       // -Y low X
-            col  = is_N ? "red" : "blue";
-
-            if (e == 0)
-                color(col) translate([TILE_SIZE - 1, u, z_center])
-                    rotate([0, 90, 0]) cylinder(h = MAG_H, d = MAG_OD);
-            else if (e == 2)
-                color(col) translate([1 - MAG_H, u, z_center])
-                    rotate([0, 90, 0]) cylinder(h = MAG_H, d = MAG_OD);
-            else if (e == 1)
-                color(col) translate([u, TILE_SIZE - 1, z_center])
-                    rotate([-90, 0, 0]) cylinder(h = MAG_H, d = MAG_OD);
-            else if (e == 3)
-                color(col) translate([u, 1 - MAG_H, z_center])
-                    rotate([-90, 0, 0]) cylinder(h = MAG_H, d = MAG_OD);
-        }
-    }
-}
-
-// ----- ghost pogo pins: render the pins in their installed positions ---
-// Not for printing; only for visual verification of the electrical-mechanical
-// alignment. One simple shape per pin: a cylinder matching POGO_PIN_OD, with
-// a flange disc at the midpoint, centred on the connector pin position.
-module ghost_pogo_pins() {
-    z_center = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D - PCB_THICK / 2;
-    pin_y0 = TILE_SIZE / 2 - (CONN_PINS - 1) * CONN_PITCH / 2;
-    pin_len = POGO_FREE_LEN;
-
-    for (e = CONN_EDGES) {
-        for (i = [0 : CONN_PINS - 1]) {
-            u = pin_y0 + i * CONN_PITCH;
-            if (e == 0)       // +X edge
-                translate([TILE_SIZE - pin_len/2 + POGO_WALL_EXPOSE,
-                           u, z_center])
-                    rotate([0, 90, 0]) _ghost_pin();
-            else if (e == 2)  // -X edge
-                translate([-POGO_WALL_EXPOSE - pin_len/2, u, z_center])
-                    rotate([0, 90, 0]) _ghost_pin();
-            else if (e == 1)  // +Y edge
-                translate([u, TILE_SIZE - pin_len/2 + POGO_WALL_EXPOSE,
-                           z_center])
-                    rotate([-90, 0, 0]) _ghost_pin();
-            else if (e == 3)  // -Y edge
-                translate([u, -POGO_WALL_EXPOSE - pin_len/2, z_center])
-                    rotate([-90, 0, 0]) _ghost_pin();
-        }
-    }
-}
-
-module _ghost_pin() {
-    // a cylinder for the pin body, centred on origin, axis along Z
-    translate([0, 0, -POGO_FREE_LEN/2])
-        cylinder(h = POGO_FREE_LEN, d = POGO_PIN_OD);
-    // flange at the middle
-    translate([0, 0, -POGO_FLANGE_H/2])
-        cylinder(h = POGO_FLANGE_H, d = POGO_FLANGE_OD);
+    echo("pin 1 = GND,  2 = V+, 3 = BUS_A, 4 = BUS_B, 5 = BUS_B, 6 = BUS_A, 7 = V+, 8 = GND");
+    echo("=== edge magnet polarity (outward face), CCW rule ===");
+    echo("+X: N low-Y, S high-Y      -X: S low-Y, N high-Y");
 }
 
 
-// ============================== frame ==============================
-// Main mechanical print. Contains:
-//   - Top lip (perimeter)
-//   - 4 walls
-//   - 4 interior corner bosses (magnets + PCB screw bosses)
-//   - Edge connector features (pogo or header) on CONN_EDGES
-//   - Diffuser retention clips on interior
-//   - Back cap snap recesses
+/* =============================== frame =============================== */
 
 module frame() {
     difference() {
         union() {
-            // outer shell — box with open back and lipped front
             frame_shell();
             frame_corner_bosses();
-            frame_diffuser_clips();
-            if (CONN_TYPE == "pogo")  frame_pogo_retainers();
+            if (CONN_TYPE == "pogo") frame_pogo_retainers();
             if (EDGE_MAGNETS)         frame_edge_magnet_bosses();
         }
         // subtractions
-        frame_back_opening();     // the main hollow interior accessible from behind
-        frame_connector_cuts();   // pogo pin holes or header slot
+        frame_back_vents();
+        frame_connector_cuts();
         if (BACK_MAGNETS) frame_back_magnet_pockets();
         if (EDGE_MAGNETS) frame_edge_magnet_pockets();
-        frame_back_cap_ledge();   // step that the back cap sits into
         frame_pcb_screw_holes();
     }
 }
 
+// ---- shell: box with closed back + walls, open at z = FRAME_H -----
 module frame_shell() {
-    // Outer box
     difference() {
-        cube([TILE_SIZE, TILE_SIZE, TILE_HEIGHT]);
-
-        // hollow out everything above the lip
-        translate([WALL_THICK, WALL_THICK, LIP_THICK])
-            cube([TILE_SIZE - 2*WALL_THICK,
-                  TILE_SIZE - 2*WALL_THICK,
-                  TILE_HEIGHT]);  // overcut (back is open)
-
-        // hollow out the lip itself to leave the diffuser opening
-        translate([WALL_THICK + LIP_WIDTH, WALL_THICK + LIP_WIDTH, -0.1])
-            cube([LIP_INNER_SIZE, LIP_INNER_SIZE, LIP_THICK + 0.2]);
+        cube([TILE_SIZE, TILE_SIZE, FRAME_H]);
+        // hollow out the interior above the back thickness
+        translate([WALL_THICK, WALL_THICK, BACK_THICK])
+            cube([TILE_SIZE - 2 * WALL_THICK,
+                  TILE_SIZE - 2 * WALL_THICK,
+                  FRAME_H]);  // over-cut through the top (open front)
     }
 }
 
-module frame_back_opening() {
-    // no-op for now; frame_shell already leaves the back open.
-    // Kept as a named module so the intent is explicit.
+// ---- back face ventilation slots --------------------------------------
+module frame_back_vents() {
+    for (i = [0 : BACK_VENT_ROWS - 1]) {
+        y = (i + 1) * TILE_SIZE / (BACK_VENT_ROWS + 1);
+        translate([(TILE_SIZE - BACK_VENT_L) / 2,
+                   y - BACK_VENT_W / 2,
+                   -0.1])
+            cube([BACK_VENT_L, BACK_VENT_W, BACK_THICK + 0.2]);
+    }
 }
 
+// ---- corner bosses for PCB screws (and optional back magnets) --------
 module frame_corner_bosses() {
-    // Chunky inside corners holding magnet and PCB screw.
-    bh = TILE_HEIGHT - LIP_THICK;
+    h = CORNER_BOSS_Z_HI - CORNER_BOSS_Z_LO;
     for (xsign = [0, 1], ysign = [0, 1]) {
         x = xsign ? TILE_SIZE - CORNER_BOSS_XY : 0;
         y = ysign ? TILE_SIZE - CORNER_BOSS_XY : 0;
-        translate([x, y, LIP_THICK])
-            cube([CORNER_BOSS_XY, CORNER_BOSS_XY, bh]);
+        translate([x, y, CORNER_BOSS_Z_LO])
+            cube([CORNER_BOSS_XY, CORNER_BOSS_XY, h]);
+    }
+}
+
+module frame_pcb_screw_holes() {
+    // M2 self-tapping clearance through the corner boss, from below the
+    // PCB up to the top of the boss.
+    for (xsign = [0, 1], ysign = [0, 1]) {
+        x = xsign ? TILE_SIZE - PCB_HOLE_INSET : PCB_HOLE_INSET;
+        y = ysign ? TILE_SIZE - PCB_HOLE_INSET : PCB_HOLE_INSET;
+        translate([x, y, CORNER_BOSS_Z_LO - 0.1])
+            cylinder(h = CORNER_BOSS_Z_HI - CORNER_BOSS_Z_LO + 0.3,
+                     d = PCB_SCREW_OD);
     }
 }
 
 module frame_back_magnet_pockets() {
-    // Optional: one magnet per corner boss, recessed from the BACK face.
-    // Use these only if you want the assembled tile to stick to a
-    // ferromagnetic backplate behind the wall (e.g. a steel sheet).
-    // Most installs don't need these — tiles hold each other via the
-    // edge magnets, and the array sticks to the wall via screws or a
-    // separate mounting rail.
     pocket_d = MAG_OD + 2 * MAG_CLEAR_RAD;
     pocket_h = MAG_H + MAG_CLEAR_AX;
-    z_from_back_face = TILE_HEIGHT - pocket_h;
-
     for (xsign = [0, 1], ysign = [0, 1]) {
         x = xsign ? TILE_SIZE - BACK_MAG_INSET : BACK_MAG_INSET;
         y = ysign ? TILE_SIZE - BACK_MAG_INSET : BACK_MAG_INSET;
-        translate([x, y, z_from_back_face])
+        translate([x, y, -0.1])
             cylinder(h = pocket_h + 0.1, d = pocket_d);
     }
 }
 
-// -------- edge magnets: hold adjacent tiles together along the seam ----
-
+// ---- edge magnet bosses (inside of each populated edge) --------------
 module frame_edge_magnet_bosses() {
-    // Thickened section on the INSIDE face of each populated edge, at two
-    // positions offset from the edge midpoint. Provides material behind
-    // the magnet pocket. Occupies the rear half of the tile (above PCB
-    // top) so the PCB doesn't need cutouts to clear them.
-    z_lo = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D;   // PCB top face
-    z_hi = z_lo + EDGE_MAG_BOSS_H;
-    zh   = z_hi - z_lo;
-
+    zh = EDGE_MAG_BOSS_ZH - EDGE_MAG_BOSS_ZL;
     for (e = CONN_EDGES) {
         for (s = [-1, 1]) {
             u = TILE_SIZE / 2 + s * EDGE_MAG_OFFSET;
-            if (e == 0)         // +X edge
+            if (e == 0)
                 translate([TILE_SIZE - WALL_THICK - EDGE_MAG_BOSS_D,
-                           u - EDGE_MAG_BOSS_W / 2, z_lo])
+                           u - EDGE_MAG_BOSS_W / 2,
+                           EDGE_MAG_BOSS_ZL])
                     cube([EDGE_MAG_BOSS_D, EDGE_MAG_BOSS_W, zh]);
-            else if (e == 2)    // -X edge
+            else if (e == 2)
                 translate([WALL_THICK,
-                           u - EDGE_MAG_BOSS_W / 2, z_lo])
+                           u - EDGE_MAG_BOSS_W / 2,
+                           EDGE_MAG_BOSS_ZL])
                     cube([EDGE_MAG_BOSS_D, EDGE_MAG_BOSS_W, zh]);
-            else if (e == 1)    // +Y edge
+            else if (e == 1)
                 translate([u - EDGE_MAG_BOSS_W / 2,
                            TILE_SIZE - WALL_THICK - EDGE_MAG_BOSS_D,
-                           z_lo])
+                           EDGE_MAG_BOSS_ZL])
                     cube([EDGE_MAG_BOSS_W, EDGE_MAG_BOSS_D, zh]);
-            else if (e == 3)    // -Y edge
-                translate([u - EDGE_MAG_BOSS_W / 2, WALL_THICK, z_lo])
+            else if (e == 3)
+                translate([u - EDGE_MAG_BOSS_W / 2, WALL_THICK,
+                           EDGE_MAG_BOSS_ZL])
                     cube([EDGE_MAG_BOSS_W, EDGE_MAG_BOSS_D, zh]);
         }
     }
 }
 
 module frame_edge_magnet_pockets() {
-    // Cylindrical pockets cut from the OUTSIDE face of each populated edge.
-    // Depth MAG_H + MAG_CLEAR_AX; opens outward so magnet faces can meet
-    // (or near-meet) when two tiles mate edge-to-edge.
-    //
-    // The pocket cuts through the 2 mm outer wall and ~0.2 mm into the
-    // boss behind it. Effective recess of the magnet outer face from the
-    // tile outer face = MAG_CLEAR_AX (~0.2 mm). Magnets installed by
-    // pressing into the pocket from outside. Structural material behind
-    // the pocket floor is ~ EDGE_MAG_BOSS_D - (pocket_h - WALL_THICK)
-    // ≈ 2.8 mm of boss material.
     pocket_d = MAG_OD + 2 * MAG_CLEAR_RAD;
     pocket_h = MAG_H + MAG_CLEAR_AX;
-    z_center = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D + EDGE_MAG_BOSS_H / 2;
-
     for (e = CONN_EDGES) {
         for (s = [-1, 1]) {
             u = TILE_SIZE / 2 + s * EDGE_MAG_OFFSET;
-            if (e == 0)         // +X: cylinder extends +X, floor at x = TILE_SIZE - pocket_h
-                translate([TILE_SIZE - pocket_h, u, z_center])
+            if (e == 0)
+                translate([TILE_SIZE - pocket_h, u, EDGE_MAG_Z_CENT])
                     rotate([0, 90, 0])
                         cylinder(h = pocket_h + 0.2, d = pocket_d);
-            else if (e == 2)    // -X: cylinder extends +X from x = -0.1
-                translate([-0.1, u, z_center])
+            else if (e == 2)
+                translate([-0.1, u, EDGE_MAG_Z_CENT])
                     rotate([0, 90, 0])
                         cylinder(h = pocket_h + 0.2, d = pocket_d);
-            else if (e == 1)    // +Y
-                translate([u, TILE_SIZE - pocket_h, z_center])
+            else if (e == 1)
+                translate([u, TILE_SIZE - pocket_h, EDGE_MAG_Z_CENT])
                     rotate([-90, 0, 0])
                         cylinder(h = pocket_h + 0.2, d = pocket_d);
-            else if (e == 3)    // -Y
-                translate([u, -0.1, z_center])
+            else if (e == 3)
+                translate([u, -0.1, EDGE_MAG_Z_CENT])
                     rotate([-90, 0, 0])
                         cylinder(h = pocket_h + 0.2, d = pocket_d);
         }
     }
 }
 
-module frame_pcb_screw_holes() {
-    // M2 screw clearance through the corner bosses.
-    // Screwed through PCB into boss from the LED side (before diffuser
-    // is installed). Threads into the plastic (self-tapping) — no insert.
-    // Hole is through the boss from PCB height up to the magnet pocket.
-    z_pcb_top = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D;   // PCB top face
-    z_bottom = z_pcb_top - PCB_THICK - 0.5;                // below PCB bottom
-    // bore is a simple through-hole in the boss
-    for (xsign = [0, 1], ysign = [0, 1]) {
-        x = xsign ? TILE_SIZE - PCB_HOLE_INSET : PCB_HOLE_INSET;
-        y = ysign ? TILE_SIZE - PCB_HOLE_INSET : PCB_HOLE_INSET;
-        translate([x, y, z_bottom])
-            cylinder(h = TILE_HEIGHT, d = PCB_SCREW_OD);
-    }
-}
-
-module frame_diffuser_clips() {
-    // Four small bumps protruding into the diffuser bay on each long wall.
-    // They compress slightly when the diffuser is pushed past them and
-    // snap back to retain it. Placed on the interior face of each wall,
-    // at the depth of the diffuser bay (just above the lip).
-    z = LIP_THICK + DIFFUSER_THICK * 0.5;
-    for (side = [0 : 3]) {
-        for (i = [0 : DIFF_CLIP_COUNT_PER_SIDE - 1]) {
-            u = (i + 1) * (TILE_SIZE / (DIFF_CLIP_COUNT_PER_SIDE + 1));
-            clip_size = [DIFF_CLIP_W, DIFF_CLIP_H * 2, DIFFUSER_THICK * 0.8];
-            if (side == 0)      // +X wall, clip pointing -X (inward)
-                translate([TILE_SIZE - WALL_THICK - DIFF_CLIP_H, u - DIFF_CLIP_W/2, z])
-                    cube(clip_size);
-            else if (side == 2) // -X wall, clip pointing +X
-                translate([WALL_THICK - DIFF_CLIP_H, u - DIFF_CLIP_W/2, z])
-                    cube(clip_size);
-            else if (side == 1) // +Y wall
-                translate([u - DIFF_CLIP_W/2, TILE_SIZE - WALL_THICK - DIFF_CLIP_H, z])
-                    cube([clip_size[1], clip_size[0], clip_size[2]]);
-            else                // -Y wall
-                translate([u - DIFF_CLIP_W/2, WALL_THICK - DIFF_CLIP_H, z])
-                    cube([clip_size[1], clip_size[0], clip_size[2]]);
-        }
-    }
-}
-
-module frame_back_cap_ledge() {
-    // A 1 mm step cut on the interior of each wall near the back, for the
-    // back cap to rest on. Cap sits flush with the outer back face.
-    step_depth = 0.6;
-    z_cut_lo = TILE_HEIGHT - BACK_CAP_THICK;
-    // cut a continuous ring along the inner wall
-    difference() {
-        translate([WALL_THICK - step_depth, WALL_THICK - step_depth, z_cut_lo])
-            cube([TILE_SIZE - 2*(WALL_THICK - step_depth),
-                  TILE_SIZE - 2*(WALL_THICK - step_depth),
-                  BACK_CAP_THICK + 0.1]);
-        translate([WALL_THICK, WALL_THICK, z_cut_lo - 0.1])
-            cube([TILE_SIZE - 2*WALL_THICK,
-                  TILE_SIZE - 2*WALL_THICK,
-                  BACK_CAP_THICK + 0.3]);
-    }
-}
-
-// -------- edge connector features --------
+// ---- edge connector features ------------------------------------------
 
 module frame_connector_cuts() {
     for (e = CONN_EDGES) {
@@ -523,180 +348,169 @@ module frame_connector_cuts() {
 }
 
 module frame_pogo_retainers() {
-    // Thickened zone on the interior of each populated edge that holds the
-    // pogo pin flanges. Length = pin strip length, thickness so flange seats
-    // against the outer wall.
     strip_len = (CONN_PINS - 1) * CONN_PITCH + POGO_FLANGE_OD + 0.5;
-    retainer_th = 2.0;                             // added material inward
-    z_center = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D - PCB_THICK / 2;
-    z_lo = z_center - POGO_FLANGE_OD / 2 - 0.5;
-    z_hi = z_center + POGO_FLANGE_OD / 2 + 0.5;
+    retainer_th = 2.0;
+    z_lo = CONN_Z_CENTER - POGO_FLANGE_OD / 2 - 0.5;
+    z_hi = CONN_Z_CENTER + POGO_FLANGE_OD / 2 + 0.5;
     zh = z_hi - z_lo;
-
     for (e = CONN_EDGES) {
         if (e == 0)
             translate([TILE_SIZE - WALL_THICK - retainer_th,
-                       TILE_SIZE/2 - strip_len/2, z_lo])
+                       TILE_SIZE / 2 - strip_len / 2, z_lo])
                 cube([retainer_th, strip_len, zh]);
         else if (e == 2)
-            translate([WALL_THICK, TILE_SIZE/2 - strip_len/2, z_lo])
+            translate([WALL_THICK,
+                       TILE_SIZE / 2 - strip_len / 2, z_lo])
                 cube([retainer_th, strip_len, zh]);
         else if (e == 1)
-            translate([TILE_SIZE/2 - strip_len/2,
+            translate([TILE_SIZE / 2 - strip_len / 2,
                        TILE_SIZE - WALL_THICK - retainer_th, z_lo])
                 cube([strip_len, retainer_th, zh]);
         else if (e == 3)
-            translate([TILE_SIZE/2 - strip_len/2, WALL_THICK, z_lo])
+            translate([TILE_SIZE / 2 - strip_len / 2, WALL_THICK, z_lo])
                 cube([strip_len, retainer_th, zh]);
     }
 }
 
 module pogo_pin_cuts_on_edge(edge) {
-    // Through holes for POGO_PIN_OD, with a flange counterbore from the
-    // INSIDE face so the pin flange is captured against the outer wall.
-    z_center = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D - PCB_THICK / 2;
     pin_y0 = TILE_SIZE / 2 - (CONN_PINS - 1) * CONN_PITCH / 2;
-
     for (i = [0 : CONN_PINS - 1]) {
         u = pin_y0 + i * CONN_PITCH;
-        if (edge == 0)            // +X
-            _pogo_one_cut([TILE_SIZE + 0.1, u, z_center], [90, 90, 0]);
-        else if (edge == 2)       // -X
-            _pogo_one_cut([-0.1, u, z_center], [-90, 90, 0]);
-        else if (edge == 1)       // +Y
-            _pogo_one_cut([u, TILE_SIZE + 0.1, z_center], [90, 0, 0]);
-        else if (edge == 3)       // -Y
-            _pogo_one_cut([u, -0.1, z_center], [-90, 0, 0]);
+        if (edge == 0)
+            _pogo_one_cut([TILE_SIZE + 0.1, u, CONN_Z_CENTER], [90, 90, 0]);
+        else if (edge == 2)
+            _pogo_one_cut([-0.1, u, CONN_Z_CENTER], [-90, 90, 0]);
+        else if (edge == 1)
+            _pogo_one_cut([u, TILE_SIZE + 0.1, CONN_Z_CENTER], [90, 0, 0]);
+        else if (edge == 3)
+            _pogo_one_cut([u, -0.1, CONN_Z_CENTER], [-90, 0, 0]);
     }
 }
 
 module _pogo_one_cut(pos, rot) {
-    // Reusable single-pin cut: through-hole + flange counterbore.
-    // Orient so cylinder axis points along rot (Y rotation of 90 = along +X).
     translate(pos) rotate(rot) {
-        // through-hole (pin body + clearance) — the hole goes from outer face
-        // all the way through the retainer block
-        cylinder(h = WALL_THICK + 5, d = POGO_PIN_HOLE, center = false);
-        // flange counterbore from the inside face (starts WALL_THICK in)
+        // through-hole
+        cylinder(h = WALL_THICK + 5, d = POGO_PIN_HOLE);
+        // flange counterbore cut from the INSIDE face
         translate([0, 0, WALL_THICK])
             cylinder(h = POGO_FLANGE_H + 0.3, d = POGO_FLANGE_OD + 0.3);
     }
 }
 
 module header_slot_on_edge(edge) {
-    // Fallback: single rectangular slot sized for a 1×8 pin header body.
-    z_center = LIP_THICK + DIFFUSER_THICK + PCB_BAY_D - PCB_THICK / 2;
     slot_w = HEADER_BODY_W;
     slot_h = HEADER_SLOT_H;
-    slot_z = z_center - slot_h / 2;
-
+    slot_z = CONN_Z_CENTER - slot_h / 2;
     if (edge == 0)
-        translate([TILE_SIZE - WALL_THICK - 0.2, (TILE_SIZE - slot_w)/2, slot_z])
+        translate([TILE_SIZE - WALL_THICK - 0.2,
+                   (TILE_SIZE - slot_w) / 2, slot_z])
             cube([WALL_THICK + 0.4, slot_w, slot_h]);
     else if (edge == 2)
-        translate([-0.2, (TILE_SIZE - slot_w)/2, slot_z])
+        translate([-0.2, (TILE_SIZE - slot_w) / 2, slot_z])
             cube([WALL_THICK + 0.4, slot_w, slot_h]);
     else if (edge == 1)
-        translate([(TILE_SIZE - slot_w)/2, TILE_SIZE - WALL_THICK - 0.2, slot_z])
+        translate([(TILE_SIZE - slot_w) / 2,
+                   TILE_SIZE - WALL_THICK - 0.2, slot_z])
             cube([slot_w, WALL_THICK + 0.4, slot_h]);
     else if (edge == 3)
-        translate([(TILE_SIZE - slot_w)/2, -0.2, slot_z])
+        translate([(TILE_SIZE - slot_w) / 2, -0.2, slot_z])
             cube([slot_w, WALL_THICK + 0.4, slot_h]);
 }
 
 
-// ============================== diffuser ==============================
-// Interchangeable diffuser panel. Drops into the frame's back opening from
-// behind and rests against the lip. Retained by the frame's diffuser clips.
-//
-// Make this in a range of patterns — frosted flat, dotted, honeycomb,
-// pixelated squares matching the 5×5 LED grid — by subclassing this module.
+/* ============================== diffuser ============================== */
 
+// 100 × 100 × DIFFUSER_THICK panel. On the back face, a continuous
+// rectangular rim descends into the frame interior for a press-fit.
+// Rim outer dimensions = frame interior − 2 × RIM_CLEAR.
+// Print orientation: rim up or rim down, either works.
 module diffuser() {
-    difference() {
-        // panel
-        cube([DIFF_SIZE, DIFF_SIZE, DIFFUSER_THICK]);
+    // outer rim footprint in plan (on X,Y)
+    rim_outer = TILE_SIZE - 2 * WALL_THICK - 2 * RIM_CLEAR;   // ≈ 95.6
+    rim_inner = rim_outer - 2 * RIM_T;                        // ≈ 93.2
+    rim_origin = (TILE_SIZE - rim_outer) / 2;
 
-        // small finger-pull slot on one edge so the diffuser can be popped
-        // out from behind with a fingernail / plastic spudger.
-        pull_w = 12;
-        translate([DIFF_SIZE/2 - pull_w/2, -0.1, DIFFUSER_THICK * 0.4])
-            cube([pull_w, 1.2, DIFFUSER_THICK]);
-    }
-}
-
-// Variant: 5×5 pixel-mask diffuser — small circular windows over each LED
-// position, fully transparent; surrounding area opaque (print in opaque
-// colour and the LEDs peek through the holes).
-// Commented out by default; enable by wrapping diffuser() call in assembly.
-//
-// module diffuser_pixelated() {
-//     led_pitch = TILE_SIZE / 5;
-//     diff_origin = (TILE_SIZE - DIFF_SIZE) / 2;
-//     difference() {
-//         cube([DIFF_SIZE, DIFF_SIZE, DIFFUSER_THICK]);
-//         for (r = [0:4], c = [0:4])
-//             translate([led_pitch/2 + c*led_pitch - diff_origin,
-//                        led_pitch/2 + r*led_pitch - diff_origin,
-//                        -0.1])
-//                 cylinder(h = DIFFUSER_THICK + 0.2, d = 7);
-//     }
-// }
-
-
-// ============================== back cap ==============================
-// Removable rear cover. Provides PCB access and holds the assembly closed.
-// Snaps into the back cap ledge cut into the frame's rear interior.
-
-module back_cap() {
     difference() {
         union() {
-            // main plate
-            translate([BACK_CAP_CLEAR, BACK_CAP_CLEAR, 0])
-                cube([BACK_CAP_OUTER, BACK_CAP_OUTER, BACK_CAP_THICK]);
-            // snap tabs — one in the centre of each side, protruding past
-            // the plate to catch on the frame ledge
-            back_cap_snaps();
+            // visible top plate — full tile footprint
+            translate([0, 0, DIFFUSER_THICK])
+                cube([TILE_SIZE, TILE_SIZE, 0.001])    // reference, removed below
+                ;
+            cube([TILE_SIZE, TILE_SIZE, DIFFUSER_THICK]);
+
+            // continuous rim descending from the back face into the frame
+            translate([rim_origin, rim_origin, -RIM_DEPTH])
+                difference() {
+                    cube([rim_outer, rim_outer, RIM_DEPTH]);
+                    translate([RIM_T, RIM_T, -0.1])
+                        cube([rim_outer - 2 * RIM_T,
+                              rim_outer - 2 * RIM_T,
+                              RIM_DEPTH + 0.2]);
+                }
         }
-        // ventilation slots — 4 per side, removing ~10 % of the back face
-        back_cap_vents();
-        // central label / cable-exit cutout (reserved; not cut by default)
+        // finger-pry slot on one edge so the diffuser can be popped off
+        translate([(TILE_SIZE - DIFF_PULL_W) / 2, -0.1, 0])
+            cube([DIFF_PULL_W, DIFF_PULL_D + 0.1, DIFFUSER_THICK * 0.6]);
     }
 }
 
-module back_cap_snaps() {
-    tab_h = BACK_CAP_SNAP_H;
-    tab_w = BACK_CAP_SNAP_W;
-    tab_d = 1.0;
-    for (side = [0 : 3]) {
-        if (side == 0)
-            translate([BACK_CAP_CLEAR + BACK_CAP_OUTER,
-                       TILE_SIZE/2 - tab_w/2, 0])
-                cube([tab_d, tab_w, tab_h]);
-        else if (side == 2)
-            translate([BACK_CAP_CLEAR - tab_d,
-                       TILE_SIZE/2 - tab_w/2, 0])
-                cube([tab_d, tab_w, tab_h]);
-        else if (side == 1)
-            translate([TILE_SIZE/2 - tab_w/2,
-                       BACK_CAP_CLEAR + BACK_CAP_OUTER, 0])
-                cube([tab_w, tab_d, tab_h]);
-        else
-            translate([TILE_SIZE/2 - tab_w/2,
-                       BACK_CAP_CLEAR - tab_d, 0])
-                cube([tab_w, tab_d, tab_h]);
+
+/* =========================== ghost geometry =========================== */
+// Not for printing — renders pogo pins and magnets in the assembled
+// positions for visual verification.
+
+module ghost_pogo_pins() {
+    pin_y0 = TILE_SIZE / 2 - (CONN_PINS - 1) * CONN_PITCH / 2;
+    pin_len = POGO_FREE_LEN;
+    for (e = CONN_EDGES) {
+        for (i = [0 : CONN_PINS - 1]) {
+            u = pin_y0 + i * CONN_PITCH;
+            if (e == 0)
+                translate([TILE_SIZE - pin_len/2 + POGO_WALL_EXPOSE,
+                           u, CONN_Z_CENTER])
+                    rotate([0, 90, 0]) _ghost_pin();
+            else if (e == 2)
+                translate([-POGO_WALL_EXPOSE - pin_len/2, u, CONN_Z_CENTER])
+                    rotate([0, 90, 0]) _ghost_pin();
+            else if (e == 1)
+                translate([u, TILE_SIZE - pin_len/2 + POGO_WALL_EXPOSE,
+                           CONN_Z_CENTER])
+                    rotate([-90, 0, 0]) _ghost_pin();
+            else if (e == 3)
+                translate([u, -POGO_WALL_EXPOSE - pin_len/2, CONN_Z_CENTER])
+                    rotate([-90, 0, 0]) _ghost_pin();
+        }
     }
 }
 
-module back_cap_vents() {
-    vent_w = 3;
-    vent_l = 30;
-    rows = 3;
-    for (i = [0 : rows - 1]) {
-        y = BACK_CAP_CLEAR + (i + 1) * BACK_CAP_OUTER / (rows + 1);
-        translate([BACK_CAP_CLEAR + (BACK_CAP_OUTER - vent_l) / 2,
-                   y - vent_w / 2,
-                   -0.1])
-            cube([vent_l, vent_w, BACK_CAP_THICK + 0.2]);
+module _ghost_pin() {
+    translate([0, 0, -POGO_FREE_LEN / 2])
+        cylinder(h = POGO_FREE_LEN, d = POGO_PIN_OD);
+    translate([0, 0, -POGO_FLANGE_H / 2])
+        cylinder(h = POGO_FLANGE_H, d = POGO_FLANGE_OD);
+}
+
+module ghost_edge_magnets() {
+    for (e = CONN_EDGES) {
+        for (s = [-1, 1]) {
+            u = TILE_SIZE / 2 + s * EDGE_MAG_OFFSET;
+            is_N = (e == 0 && s == -1) ||    // +X low Y
+                   (e == 1 && s ==  1) ||    // +Y high X
+                   (e == 2 && s ==  1) ||    // -X high Y
+                   (e == 3 && s == -1);      // -Y low X
+            col = is_N ? "red" : "blue";
+            if (e == 0)
+                color(col) translate([TILE_SIZE - 1, u, EDGE_MAG_Z_CENT])
+                    rotate([0, 90, 0]) cylinder(h = MAG_H, d = MAG_OD);
+            else if (e == 2)
+                color(col) translate([1 - MAG_H, u, EDGE_MAG_Z_CENT])
+                    rotate([0, 90, 0]) cylinder(h = MAG_H, d = MAG_OD);
+            else if (e == 1)
+                color(col) translate([u, TILE_SIZE - 1, EDGE_MAG_Z_CENT])
+                    rotate([-90, 0, 0]) cylinder(h = MAG_H, d = MAG_OD);
+            else if (e == 3)
+                color(col) translate([u, 1 - MAG_H, EDGE_MAG_Z_CENT])
+                    rotate([-90, 0, 0]) cylinder(h = MAG_H, d = MAG_OD);
+        }
     }
 }
