@@ -223,26 +223,16 @@ else echo("RENDER must be \"frame\" | \"diffuser\" | \"light_guide\" | \"assembl
 
 /* ============================= assembly ============================= */
 
+// Layout view — each printable part is placed next to the tile so that
+// all three parts (frame, diffuser, light guide) are visible in a single
+// render. Ghosts (LEDs, MCU, pogo pins, magnets) stay in the frame
+// in their installed positions so the frame model still reads as a
+// complete subsystem.
 module assembly_exploded() {
+    // ----- frame, with ghost electronics shown in place -----
     color("lightgrey") frame();
-
-    // pogo pins installed in the frame (visualisation only)
     if (CONN_TYPE == "pogo") color("gold", 0.9) ghost_pogo_pins();
-
-    // edge magnets colour-coded by polarity
-    if (EDGE_MAGNETS) ghost_edge_magnets();
-
-    // light guide (optional) floated up a bit
-    color("white", 0.8)
-        translate([0, 0, TILE_HEIGHT + 3])
-            light_guide();
-
-    // diffuser floated up further
-    color("white", 0.45)
-        translate([0, 0, TILE_HEIGHT + 12])
-            diffuser();
-
-    // ghost LED modules in their cradles
+    if (EDGE_MAGNETS)        ghost_edge_magnets();
     ghost_led_modules();
 
     // ghost MCU board in its pocket
@@ -251,10 +241,22 @@ module assembly_exploded() {
                 BACK_THICK + MCU_RIB_H - 1.6])
         cube([21, 17.5, 1.6]);   // XIAO ESP32-C3 footprint
 
+    // ----- diffuser placed to the right of the frame -----
+    color("white", 0.6)
+        translate([TILE_SIZE + 20, 0, 0])
+            diffuser();
+
+    // ----- light guide placed above the frame in plan view -----
+    color("white", 0.9)
+        translate([0, TILE_SIZE + 20, 0])
+            light_guide();
+
     echo("=== palindromic pinout on populated edges ===");
     echo("pin 1 = GND,  2 = V+, 3 = BUS_A, 4 = BUS_B, 5 = BUS_B, 6 = BUS_A, 7 = V+, 8 = GND");
     echo("=== edge magnet polarity (outward face), CCW rule ===");
     echo("+X: N low-Y, S high-Y      -X: S low-Y, N high-Y");
+    echo("=== assembly layout (plan view) ===");
+    echo("[frame]  [diffuser to right]  [light guide above]");
 }
 
 
